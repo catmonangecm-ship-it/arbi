@@ -1,2118 +1,1155 @@
-= 50;
-            const prices = state.priceHistory.slice(-maxPoints);
-            const labels = prices.map((_, i) => {
-                const now = new Date();
-                const time = new Date(now.getTime() - (maxPoints - i - 1) * 5000);
-                return time.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-            });
-            
-            tokenChart.data.labels = labels;
-            tokenChart.data.datasets[0].data = prices;
-            tokenChart.update('none');
-            
-            // Update live stats
-            document.getElementById('liveTokenPrice').textContent = state.currentPrice.toFixed(2);
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 Bot Arbitrage ULTRA - Plus d'Opportunités</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            min-height: 100vh;
         }
-
-        // ==================== WEBSOCKET ====================
-
-        function connectWebSocket() {
-            const symbol = `${state.currentToken}USDT`.toLowerCase();
-            
-            if (ws) {
-                ws.close();
-            }
-            
-            ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol}@ticker`);
-            
-            ws.onopen = () => {
-                console.log('✅ WebSocket connecté');
-                document.getElementById('wsStatus').innerHTML = '🟢 Connecté';
-            };
-            
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                state.currentPrice = parseFloat(data.c);
-                
-                state.priceHistory.push(state.currentPrice);
-                if (state.priceHistory.length > 100) state.priceHistory.shift();
-                
-                updateTokenChart();
-                
-                // Check risk management si position ouverte
-                if (state.position && state.autoMode) {
-                    checkRiskManagement();
-                }
-            };
-            
-            ws.onerror = () => {
-                document.getElementById('wsStatus').innerHTML = '🔴 Erreur';
-            };
-            
-            ws.onclose = () => {
-                document.getElementById('wsStatus').innerHTML = '🟡 Déconnecté';
-                setTimeout(connectWebSocket, 5000);
-            };
+        .neon-border {
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.8);
+            border: 2px solid #ff0000;
         }
-
-        function changeCrypto() {
-            state.currentToken = document.getElementById('cryptoSelect').value;
-            document.getElementById('currentTokenName').textContent = state.currentToken;
-            state.priceHistory = [];
-            connectWebSocket();
+        @keyframes pulse-neon {
+            0%, 100% { box-shadow: 0 0 20px rgba(255, 0, 0, 0.5); }
+            50% { box-shadow: 0 0 40px rgba(255, 0, 0, 1); }
         }
-
-        function changeTimeframe(tf) {
-            console.log('Timeframe:', tf);
+        .pulse-neon {
+            animation: pulse-neon 2s ease-in-out infinite;
         }
-
-        // ==================== TRADING ====================
-
-        async function startBot() {
-            if (!state.isConnected) {
-                alert('❌ Connectez votre wallet d\'abord');
-                return;
-            }
-            
-            const capital = parseFloat(document.getElementById('capitalInput').value);
-            if (!capital || capital <= 0) {
-                alert('❌ Définissez un capital valide');
-                return;
-            }
-            
-            const confirm = window.confirm(`🤖 DÉMARRER LE BOT\n\nCapital: ${capital} USDT\nToken: ${state.currentToken}\nMode: ${state.autoMode ? 'Auto 24/7' : 'Manuel'}\n\nContinuer ?`);
-            if (!confirm) return;
-            
-            document.getElementById('startBotBtn').classList.add('hidden');
-            document.getElementById('stopBotBtn').classList.remove('hidden');
-            
-            await sendTelegramNotification(`🤖 BOT DÉMARRÉ\n\nCapital: ${capital} USDT\nToken: ${state.currentToken}\nMode: ${state.autoMode ? 'Auto 24/7' : 'Manuel'}`);
-            
-            botInterval = setInterval(() => {
-                console.log('🤖 Bot actif - Prix:', state.currentPrice);
-            }, 10000);
-            
-            alert('✅ Bot démarré !');
+        @keyframes gradient-shift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
         }
-
-        function stopBot() {
-            if (botInterval) {
-                clearInterval(botInterval);
-                botInterval = null;
-            }
-            
-            document.getElementById('startBotBtn').classList.remove('hidden');
-            document.getElementById('stopBotBtn').classList.add('hidden');
-            
-            sendTelegramNotification('⏸️ Bot arrêté');
-            
-            alert('⏸️ Bot arrêté');
+        .gradient-animate {
+            background-size: 200% 200%;
+            animation: gradient-shift 3s ease infinite;
         }
-
-        async function executeSell(reason) {
-            console.log('🔴 VENTE -', reason);
-            
-            state.position = null;
-            document.getElementById('positionStatus').innerHTML = '⚪ Aucune';
-            
-            updateStats();
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 6px;
         }
-
-        function updateStats() {
-            const totalTrades = state.trades.length;
-            const winning = state.trades.filter(t => parseFloat(t.profit) > 0).length;
-            const losing = state.trades.filter(t => parseFloat(t.profit) < 0).length;
-            const winRate = totalTrades > 0 ? ((winning / totalTrades) * 100).toFixed(1) : 0;
-            
-            document.getElementById('totalProfit').textContent = state.stats.totalProfit.toFixed(2);
-            document.getElementById('winningTrades').textContent = winning;
-            document.getElementById('losingTrades').textContent = losing;
-            document.getElementById('winRate').textContent = winRate;
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.3);
+            border-radius: 10px;
         }
-
-        function renderTrades() {
-            const container = document.getElementById('tradesContainer');
-            
-            if (state.trades.length === 0) {
-                container.innerHTML = `
-                    <div class="text-center py-8 text-gray-400">
-                        <span class="text-4xl">💤</span>
-                        <p>Aucun trade pour le moment</p>
-                    </div>
-                `;
-                return;
-            }
-            
-            container.innerHTML = state.trades.map(t => {
-                const isProfit = parseFloat(t.profit) >= 0;
-                const borderColor = t.type === 'ARBITRAGE' ? 'border-purple-400' : (t.type === 'BUY' ? 'border-green-400' : 'border-red-400');
-                
-                return `
-                <div class="flex items-center justify-between p-4 bg-slate-700/50 rounded-lg mb-2 border-l-4 ${borderColor}">
-                    <div class="flex items-center gap-4">
-                        <span class="text-3xl">
-                            ${t.type === 'ARBITRAGE' ? '💎' : (t.type === 'BUY' ? '🟢' : '🔴')}
-                        </span>
-                        <div>
-                            <p class="font-bold">${t.type} ${t.pair}</p>
-                            <p class="text-xs text-gray-400">
-                                ${t.time} • ${t.amount} USDT • ${t.mode === 'auto' ? '🤖 AUTO' : '👤 MANUEL'}
-                                ${t.reason ? ` • ${t.reason}` : ''}
-                            </p>
-                            ${t.tx1 ? `<p class="text-xs text-blue-400 mt-1">TX: ${t.tx1.slice(0, 10)}...${t.tx1.slice(-6)}</p>` : ''}
-                        </div>
-                    </div>
-                    <div class="text-right">
-                        ${t.entryPrice !== '-' ? `<p class="font-mono">${t.entryPrice}</p>` : ''}
-                        ${t.type !== 'BUY' ? `
-                            <p class="font-bold ${isProfit ? 'text-green-400' : 'text-red-400'}">
-                                ${isProfit ? '+' : ''}${t.profit} USDT
-                            </p>
-                            <p class="text-sm ${isProfit ? 'text-green-400' : 'text-red-400'}">
-                                ${isProfit ? '+' : ''}${t.profitPercent}%
-                            </p>
-                        ` : ''}
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: rgba(6, 182, 212, 0.5);
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body class="text-white p-4">
+    <div class="max-w-[1800px] mx-auto">
+        <!-- AVERTISSEMENT CRITIQUE -->
+        <div class="neon-border pulse-neon bg-red-900/30 backdrop-blur-xl rounded-3xl p-8 mb-6">
+            <div class="flex items-start gap-6">
+                <div class="text-6xl">⚠️</div>
+                <div class="flex-1">
+                    <h2 class="text-3xl font-bold text-red-400 mb-4">MODE RÉEL ULTRA - TRANSACTIONS BLOCKCHAIN</h2>
+                    <div class="space-y-3 text-red-200">
+                        <p class="text-lg font-bold">🔴 Ce bot exécute de VRAIES transactions sur la blockchain BSC</p>
+                        <p>✅ Scan de 15+ tokens sur 6 DEX = 100+ paires</p>
+                        <p>✅ Arbitrage triangulaire (3 swaps)</p>
+                        <p>✅ Chaque arbitrage consomme du GAS (BNB réel)</p>
+                        <p>✅ Vous pouvez PERDRE de l'argent si le marché bouge rapidement</p>
+                        <p class="text-xl font-bold mt-4">💰 COMMENCEZ AVEC DE PETITS MONTANTS (0.01-0.05 BNB)</p>
                     </div>
                 </div>
-            `}).join('');
-        }
+            </div>
+        </div>
 
-        // ==================== ARBITRAGE CROSS-DEX RÉEL ====================
-
-        async function toggleArbitrage() {
-            state.arbitrage.enabled = !state.arbitrage.enabled;
-
-            if (state.arbitrage.enabled) {
-                startArbitrage();
-                document.getElementById('arbIcon').textContent = '⏸️';
-                document.getElementById('arbText').textContent = 'Arrêter';
-                document.getElementById('arbitrageToggle').className = 
-                    'flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all bg-red-600 hover:bg-red-700';
-                
-                await sendTelegramNotification('💎 ARBITRAGE ACTIVÉ\n\nRecherche d\'opportunités en cours...');
-            } else {
-                stopArbitrage();
-                document.getElementById('arbIcon').textContent = '▶️';
-                document.getElementById('arbText').textContent = 'Démarrer';
-                document.getElementById('arbitrageToggle').className = 
-                    'flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all bg-green-600 hover:bg-green-700';
-                
-                await sendTelegramNotification('⏸️ Arbitrage arrêté');
-            }
-        }
-
-        function startArbitrage() {
-            console.log('💎 Arbitrage activé');
-            
-            state.arbitrage.minProfit = parseFloat(document.getElementById('minArbitrageProfit').value);
-            state.arbitrage.amount = parseFloat(document.getElementById('arbitrageAmount').value);
-            state.arbitrage.scanInterval = parseFloat(document.getElementById('arbitrageScanInterval').value) * 1000;
-            
-            scanArbitrageOpportunities();
-            
-            arbitrageInterval = setInterval(() => {
-                scanArbitrageOpportunities();
-            }, state.arbitrage.scanInterval);
-        }
-
-        function stopArbitrage() {
-            if (arbitrageInterval) {
-                clearInterval(arbitrageInterval);
-                arbitrageInterval = null;
-            }
-            
-            console.log('⏸️ Arbitrage arrêté');
-        }
-
-        async function scanArbitrageOpportunities() {
-            console.log('🔍 Scan arbitrage RÉEL sur tous les DEX...');
-            state.arbitrage.currentOpportunities = [];
-            
-            const amount = state.arbitrage.amount;
-            const minProfit = state.arbitrage.minProfit;
-            
-            const tokensToScan = ['BTC', 'ETH', 'BNB'];
-            
-            const dexPairs = [
-                ['PCS', 'BSW'],
-                ['PCS', 'APESWAP'],
-                ['PCS', 'BABYSWAP'],
-                ['PCS', 'MDEX'],
-                ['BSW', 'PCS'],
-                ['BSW', 'APESWAP'],
-                ['BSW', 'BABYSWAP'],
-                ['APESWAP', 'PCS'],
-                ['APESWAP', 'BSW'],
-                ['BABYSWAP', 'PCS'],
-                ['BABYSWAP', 'BSW']
-            ];
-            
-            try {
-                for (const token of tokensToScan) {
-                    for (const [dex1, dex2] of dexPairs) {
-                        try {
-                            const opp = await checkCrossDEXArbitrageReal(token, amount, dex1, dex2);
-                            if (opp && opp.profitPercent >= minProfit) {
-                                state.arbitrage.currentOpportunities.push(opp);
-                                state.arbitrage.opportunitiesDetected++;
-                                console.log(`✅ Opportunité: ${DEX_NAMES[dex1]} → ${DEX_NAMES[dex2]} (${token}): +${opp.profitPercent.toFixed(2)}%`);
-                            }
-                        } catch (err) {
-                            console.log(`⚠️ Erreur ${dex1}→${dex2} (${token}):`, err.message);
-                        }
-                    }
-                }
-                
-            } catch (error) {
-                console.error('Erreur scan arbitrage:', error);
-            }
-            
-            state.arbitrage.currentOpportunities.sort((a, b) => b.profitPercent - a.profitPercent);
-            
-            renderArbitrageOpportunities();
-            updateArbitrageStats();
-            
-            if (state.autoMode && state.arbitrage.currentOpportunities.length > 0) {
-                const bestOpp = state.arbitrage.currentOpportunities[0];
-                
-                if (bestOpp && bestOpp.executable !== false) {
-                    console.log('🤖 Auto-exécution:', bestOpp.profitPercent.toFixed(2) + '%');
-                    executeArbitrage(0);
-                }
-            }
-        }
-
-        async function checkCrossDEXArbitrageReal(token, amount, dex1Code, dex2Code) {
-            try {
-                if (!state.provider) {
-                    return null;
-                }
-
-                const tokenAddress = TOKENS[token];
-                const usdtAddress = TOKENS.USDT;
-                
-                if (!tokenAddress || !usdtAddress) return null;
-
-                const router1 = new ethers.Contract(DEX_ROUTERS[dex1Code], ROUTER_ABI, state.provider);
-                const router2 = new ethers.Contract(DEX_ROUTERS[dex2Code], ROUTER_ABI, state.provider);
-                
-                const amountIn = ethers.utils.parseUnits(amount.toString(), 18);
-                const pathBuy = [usdtAddress, tokenAddress];
-                const pathSell = [tokenAddress, usdtAddress];
-                
-                const timeout = (ms) => new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('Timeout')), ms)
-                );
-                
-                try {
-                    const amounts1Promise = router1.getAmountsOut(amountIn, pathBuy);
-                    const amounts1 = await Promise.race([amounts1Promise, timeout(3000)]);
-                    const tokenReceived = amounts1[1];
-                    
-                    const amounts2Promise = router2.getAmountsOut(tokenReceived, pathSell);
-                    const amounts2 = await Promise.race([amounts2Promise, timeout(3000)]);
-                    const usdtReceived = parseFloat(ethers.utils.formatUnits(amounts2[1], 18));
-                    
-                    const grossProfit = usdtReceived - amount;
-                    const grossProfitPercent = (grossProfit / amount) * 100;
-                    
-                    const gasPrice = await state.provider.getGasPrice();
-                    const gasPriceGwei = parseFloat(ethers.utils.formatUnits(gasPrice, 'gwei'));
-                    const gasLimit = 300000 * 2;
-                    const gasCostBNB = (gasPriceGwei * gasLimit) / 1e9;
-                    
-                    const bnbPriceUSD = 600;
-                    const gasCostUSD = gasCostBNB * bnbPriceUSD;
-                    
-                    const swapFees = amount * 0.005;
-                    
-                    const netProfit = grossProfit - gasCostUSD - swapFees;
-                    const netProfitPercent = (netProfit / amount) * 100;
-                    
-                    console.log(`💎 ${DEX_NAMES[dex1Code]} → ${DEX_NAMES[dex2Code]} (${token}):`);
-                    console.log(`   Profit NET: ${netProfitPercent.toFixed(3)}% (${netProfit.toFixed(2)})`);
-                    
-                    if (netProfitPercent < 0.1) return null;
-                    
-                    return {
-                        type: 'cross_dex',
-                        route: `${DEX_NAMES[dex1Code]} → ${DEX_NAMES[dex2Code]}`,
-                        dex1: dex1Code,
-                        dex2: dex2Code,
-                        dex1Name: DEX_NAMES[dex1Code],
-                        dex2Name: DEX_NAMES[dex2Code],
-                        token: token,
-                        profitPercent: netProfitPercent,
-                        grossProfitPercent: grossProfitPercent,
-                        estimatedProfit: netProfit.toFixed(2),
-                        amount: amount,
-                        tokenReceived: ethers.utils.formatUnits(tokenReceived, 18),
-                        usdtReceived: usdtReceived.toFixed(2),
-                        gasCost: gasCostUSD.toFixed(3),
-                        swapFees: swapFees.toFixed(3),
-                        gasPrice: gasPriceGwei.toFixed(1),
-                        executable: true,
-                        tokenReceivedWei: tokenReceived,
-                        router1Address: DEX_ROUTERS[dex1Code],
-                        router2Address: DEX_ROUTERS[dex2Code]
-                    };
-                    
-                } catch (error) {
-                    if (error.message === 'Timeout') {
-                        console.log(`⏱️ Timeout ${DEX_NAMES[dex1Code]}→${DEX_NAMES[dex2Code]} (${token})`);
-                    }
-                    return null;
-                }
-                
-            } catch (error) {
-                console.error(`Erreur checkCrossDEXArbitrageReal:`, error.message);
-                return null;
-            }
-        }
-
-        function renderArbitrageOpportunities() {
-            const container = document.getElementById('arbOpportunitiesList');
-            
-            if (state.arbitrage.currentOpportunities.length === 0) {
-                container.innerHTML = `
-                    <div class="text-center py-8 text-gray-400">
-                        <span class="text-4xl">🔍</span>
-                        <p>Recherche en cours...</p>
-                        <p class="text-xs mt-2">Profit min: ${state.arbitrage.minProfit}% • Scan: ${state.arbitrage.scanInterval/1000}s</p>
-                    </div>
-                `;
-                return;
-            }
-
-            container.innerHTML = state.arbitrage.currentOpportunities.map((opp, index) => {
-                const isExecutable = opp.executable !== false;
-                const isHighProfit = opp.profitPercent >= 1;
-                const borderColor = isHighProfit ? 'border-green-500' : 'border-yellow-500';
-                const glowClass = isHighProfit ? 'glow' : '';
-                
-                return `
-                <div class="bg-slate-700/50 border-2 ${borderColor} rounded-xl p-4 mb-3 ${glowClass}">
-                    <div class="flex justify-between items-start mb-3">
-                        <div class="flex-1">
-                            <p class="text-sm text-gray-400">🌊 Cross-DEX Réel</p>
-                            <p class="font-bold text-lg">${opp.dex1Name} → ${opp.dex2Name}</p>
-                            <p class="text-sm text-blue-400 mt-1">Token: ${opp.token} • ${opp.amount} USDT</p>
-                            <div class="mt-2 text-xs space-y-1">
-                                <p class="text-gray-400">
-                                    📊 Profit brut: <span class="text-yellow-400">+${opp.grossProfitPercent.toFixed(2)}%</span>
-                                </p>
-                                <p class="text-gray-400">
-                                    ⛽ Gas (~${opp.gasPrice} Gwei): <span class="text-red-400">-${opp.gasCost}</span>
-                                </p>
-                                <p class="text-gray-400">
-                                    💸 Swap fees (0.5%): <span class="text-red-400">-${opp.swapFees}</span>
-                                </p>
-                            </div>
-                        </div>
-                        <div class="text-right">
-                            <p class="text-2xl font-bold ${isHighProfit ? 'text-green-400' : 'text-yellow-400'}">
-                                +${opp.profitPercent.toFixed(2)}%
-                            </p>
-                            <p class="text-sm text-gray-300 font-bold">≈ ${opp.estimatedProfit}</p>
-                            <p class="text-xs text-gray-500 mt-1">NET</p>
-                        </div>
-                    </div>
-
-                    <div class="flex gap-2">
-                        ${isExecutable ? `
-                            <button onclick="executeArbitrage(${index})" class="flex-1 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 rounded-lg font-semibold text-sm transition-all">
-                                ⚡ Exécuter ${state.autoMode ? '(AUTO)' : '(MANUEL)'}
-                            </button>
-                        ` : `
-                            <div class="flex-1 px-4 py-2 bg-gray-600 rounded-lg text-sm text-center text-gray-400">
-                                ⚠️ Non disponible
-                            </div>
-                        `}
-                        <button onclick="ignoreOpportunity(${index})" class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm">
-                            ✖️
-                        </button>
-                    </div>
-                </div>
-            `}).join('');
-        }
-
-        async function executeArbitrage(index) {
-            const opp = state.arbitrage.currentOpportunities[index];
-            if (!opp || !opp.executable) {
-                alert('❌ Cette opportunité n\'est pas exécutable');
-                return;
-            }
-
-            if (!state.autoMode) {
-                const confirm = window.confirm(`💎 ARBITRAGE CROSS-DEX RÉEL\n\n${opp.dex1Name} → ${opp.dex2Name}\nToken: ${opp.token}\n\nProfit NET: +${opp.profitPercent.toFixed(2)}% (${opp.estimatedProfit})\nProfit BRUT: +${opp.grossProfitPercent.toFixed(2)}%\n\n💸 Frais:\n• Gas: ${opp.gasCost} (~${opp.gasPrice} Gwei)\n• Swap fees: ${opp.swapFees}\n\n⚠️ Risques:\n• Slippage possible\n• Prix peut changer\n• Nécessite approbation tokens\n\nContinuer ?`);
-                if (!confirm) return;
-            }
-
-            try {
-                console.log(`💎 Exécution arbitrage RÉEL: ${opp.dex1Name} → ${opp.dex2Name} (${opp.token})`);
-                
-                await sendTelegramNotification(`💎 ARBITRAGE EN COURS\n\n${opp.dex1Name} → ${opp.dex2Name}\nToken: ${opp.token}\nProfit estimé: +${opp.profitPercent.toFixed(2)}%\nMontant: ${opp.amount} USDT`);
-                
-                const tokenAddress = TOKENS[opp.token];
-                const usdtAddress = TOKENS.USDT];
-                
-                if (!state.signer) {
-                    throw new Error('Signer non disponible');
-                }
-                
-                console.log(`📝 Étape 1/4: Approbation USDT pour ${opp.dex1Name}...`);
-                
-                const usdtContract = new ethers.Contract(usdtAddress, ERC20_ABI, state.signer);
-                const amountIn = ethers.utils.parseUnits(opp.amount.toString(), 18);
-                
-                const currentAllowance = await usdtContract.allowance(state.account, opp.router1Address);
-                
-                if (currentAllowance.lt(amountIn)) {
-                    console.log('   → Approbation nécessaire...');
-                    const approveTx = await usdtContract.approve(opp.router1Address, ethers.constants.MaxUint256, {
-                        gasLimit: 100000
-                    });
-                    console.log('   ⏳ Attente confirmation...');
-                    await approveTx.wait();
-                    console.log('   ✅ Approbation confirmée');
-                } else {
-                    console.log('   ✅ Déjà approuvé');
-                }
-                
-                console.log(`📝 Étape 2/4: Achat ${opp.token} sur ${opp.dex1Name}...`);
-                
-                const router1 = new ethers.Contract(opp.router1Address, ROUTER_ABI, state.signer);
-                const pathBuy = [usdtAddress, tokenAddress];
-                
-                const amountsOut1 = await router1.getAmountsOut(amountIn, pathBuy);
-                const amountOutMin1 = amountsOut1[1].mul(98).div(100);
-                
-                const deadline1 = Math.floor(Date.now() / 1000) + 60 * 20;
-                
-                console.log(`   → Swap: ${opp.amount} USDT → ${ethers.utils.formatUnits(amountsOut1[1], 18)} ${opp.token}`);
-                
-                const tx1 = await router1.swapExactTokensForTokens(
-                    amountIn,
-                    amountOutMin1,
-                    pathBuy,
-                    state.account,
-                    deadline1,
-                    { gasLimit: 350000 }
-                );
-                
-                console.log('   ⏳ Attente confirmation...');
-                const receipt1 = await tx1.wait();
-                console.log(`   ✅ Confirmé: ${receipt1.transactionHash}`);
-                
-                await new Promise(resolve => setTimeout(resolve, 3000));
-                
-                console.log(`📝 Étape 3/4: Approbation ${opp.token} pour ${opp.dex2Name}...`);
-                
-                const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, state.signer);
-                const tokenBalance = await tokenContract.balanceOf(state.account);
-                
-                console.log(`   → Solde ${opp.token}: ${ethers.utils.formatUnits(tokenBalance, 18)}`);
-                
-                const currentAllowance2 = await tokenContract.allowance(state.account, opp.router2Address);
-                
-                if (currentAllowance2.lt(tokenBalance)) {
-                    console.log('   → Approbation nécessaire...');
-                    const approveTx2 = await tokenContract.approve(opp.router2Address, ethers.constants.MaxUint256, {
-                        gasLimit: 100000
-                    });
-                    console.log('   ⏳ Attente confirmation...');
-                    await approveTx2.wait();
-                    console.log('   ✅ Approbation confirmée');
-                } else {
-                    console.log('   ✅ Déjà approuvé');
-                }
-                
-                console.log(`📝 Étape 4/4: Vente ${opp.token} sur ${opp.dex2Name}...`);
-                
-                const router2 = new ethers.Contract(opp.router2Address, ROUTER_ABI, state.signer);
-                const pathSell = [tokenAddress, usdtAddress];
-                
-                const amountsOut2 = await router2.getAmountsOut(tokenBalance, pathSell);
-                const amountOutMin2 = amountsOut2[1].mul(98).div(100);
-                
-                const deadline2 = Math.floor(Date.now() / 1000) + 60 * 20;
-                
-                console.log(`   → Swap: ${ethers.utils.formatUnits(tokenBalance, 18)} ${opp.token} → ${ethers.utils.formatUnits(amountsOut2[1], 18)} USDT`);
-                
-                const tx2 = await router2.swapExactTokensForTokens(
-                    tokenBalance,
-                    amountOutMin2,
-                    pathSell,
-                    state.account,
-                    deadline2,
-                    { gasLimit: 350000 }
-                );
-                
-                console.log('   ⏳ Attente confirmation...');
-                const receipt2 = await tx2.wait();
-                console.log(`   ✅ Confirmé: ${receipt2.transactionHash}`);
-                
-                const finalUSDT = parseFloat(ethers.utils.formatUnits(amountsOut2[1], 18));
-                const realProfit = finalUSDT - opp.amount;
-                const realProfitPercent = (realProfit / opp.amount) * 100;
-                
-                console.log(`\n💰 RÉSULTAT:`);
-                console.log(`   Capital initial: ${opp.amount} USDT`);
-                console.log(`   Capital final: ${finalUSDT.toFixed(2)} USDT`);
-                console.log(`   Profit RÉEL: ${realProfitPercent.toFixed(2)}% (${realProfit.toFixed(2)})`);
-                
-                state.arbitrage.executed++;
-                state.arbitrage.totalProfit += realProfit;
-                if (realProfitPercent > state.arbitrage.bestProfit) {
-                    state.arbitrage.bestProfit = realProfitPercent;
-                }
-                state.stats.totalProfit += realProfit;
-                
-                const trade = {
-                    id: Date.now(),
-                    time: new Date().toLocaleTimeString('fr-FR'),
-                    type: 'ARBITRAGE',
-                    pair: `${opp.dex1Name} → ${opp.dex2Name} (${opp.token})`,
-                    amount: opp.amount.toFixed(2),
-                    entryPrice: '-',
-                    profit: realProfit.toFixed(2),
-                    profitPercent: realProfitPercent.toFixed(2),
-                    mode: state.autoMode ? 'auto' : 'manual',
-                    reason: 'cross_dex_real',
-                    tx1: receipt1.transactionHash,
-                    tx2: receipt2.transactionHash
-                };
-                
-                state.trades.unshift(trade);
-                renderTrades();
-                
-                await sendTelegramNotification(`✅ ARBITRAGE RÉUSSI !\n\n${opp.dex1Name} → ${opp.dex2Name} (${opp.token})\n\nProfit RÉEL: +${realProfitPercent.toFixed(2)}% (${realProfit.toFixed(2)})\n\nTX1                </div>
-
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-red-500/20 via-orange-500/20 to-yellow-500/20 backdrop-blur-xl rounded-3xl p-8 mb-6 border border-red-500/30 gradient-animate">
+            <div class="flex flex-col lg:flex-row justify-between items-center gap-6">
                 <div>
-                    <label class="block text-sm text-gray-400 mb-2">% par trade</label>
-                    <input type="number" id="tradePercent" value="10" min="1" max="100" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-yellow-400">
+                    <h1 class="text-5xl font-bold mb-3 bg-gradient-to-r from-red-400 via-orange-400 to-yellow-400 bg-clip-text text-transparent">
+                        🚀 Bot Arbitrage ULTRA
+                    </h1>
+                    <p class="text-red-300 text-lg font-bold">
+                        ⚡ 15+ Tokens • 6 DEX • Scan Triangulaire • Plus d'Opportunités
+                    </p>
                 </div>
-            </div>
-
-            <div class="flex gap-3">
-                <button onclick="startBot()" id="startBotBtn" class="flex-1 px-6 py-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 rounded-lg font-bold text-lg transition-all">
-                    ▶️ Démarrer Bot
-                </button>
-                <button onclick="stopBot()" id="stopBotBtn" class="flex-1 px-6 py-4 bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 rounded-lg font-bold text-lg transition-all hidden">
-                    ⏸️ Arrêter Bot
-                </button>
-            </div>
-        </div>
-
-        <!-- Historique Trades -->
-        <div id="tradesSection" class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6 mb-6 hidden">
-            <h3 class="text-2xl font-bold mb-4">📜 Historique des Trades</h3>
-            <div id="tradesContainer">
-                <div class="text-center py-8 text-gray-400">
-                    <span class="text-4xl">💤</span>
-                    <p>Aucun trade pour le moment</p>
+                <div class="flex flex-col gap-3">
+                    <button onclick="connectWallet()" id="connectBtn" class="px-10 py-5 bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-600 hover:to-orange-700 rounded-2xl font-bold text-xl shadow-2xl transition-all transform hover:scale-105">
+                        <span id="walletText">🔌 Connecter MetaMask</span>
+                    </button>
+                    <div id="walletInfo" class="hidden text-sm text-center bg-slate-900/50 rounded-xl p-3 border border-red-500/30">
+                        <p><strong>Balance:</strong> <span id="bnbBalance">0</span> BNB</p>
+                        <p><strong>Approvals:</strong> <span id="approvalStatus" class="text-yellow-400">En attente</span></p>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- System Status -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4">
-                <h4 class="font-bold mb-3 text-green-400">🟢 Système</h4>
-                <div class="text-sm text-gray-300 space-y-1">
-                    <p>Mode: <span id="systemMode" class="font-bold text-yellow-400">Manuel</span></p>
-                    <p>Anti-Veille: <span id="keepAwakeStatus" class="font-bold">🔴 Inactif</span></p>
-                    <p>Position: <span id="positionStatus" class="font-bold">⚪ Aucune</span></p>
-                    <p>Uptime: <span id="uptimeStatus" class="font-bold">0h 0m</span></p>
+        <!-- Stats Dashboard -->
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+            <div class="bg-red-500/10 backdrop-blur-xl rounded-2xl p-6 border border-red-500/30 text-center">
+                <p class="text-sm text-red-400 mb-2">🔴 Status</p>
+                <p id="scanStatus" class="text-4xl font-bold">⏸️</p>
+            </div>
+            <div class="bg-green-500/10 backdrop-blur-xl rounded-2xl p-6 border border-green-500/30 text-center">
+                <p class="text-sm text-green-400 mb-2">💎 Opportunités</p>
+                <p id="oppCount" class="text-4xl font-bold text-green-400">0</p>
+            </div>
+            <div class="bg-purple-500/10 backdrop-blur-xl rounded-2xl p-6 border border-purple-500/30 text-center">
+                <p class="text-sm text-purple-400 mb-2">💰 Profit Net</p>
+                <p id="totalProfit" class="text-4xl font-bold text-purple-400">0</p>
+            </div>
+            <div class="bg-yellow-500/10 backdrop-blur-xl rounded-2xl p-6 border border-yellow-500/30 text-center">
+                <p class="text-sm text-yellow-400 mb-2">⛽ Gas</p>
+                <p id="gasPrice" class="text-4xl font-bold text-yellow-400">-</p>
+            </div>
+            <div class="bg-blue-500/10 backdrop-blur-xl rounded-2xl p-6 border border-blue-500/30 text-center">
+                <p class="text-sm text-blue-400 mb-2">✅ Réussis</p>
+                <p id="successCount" class="text-4xl font-bold text-blue-400">0</p>
+            </div>
+            <div class="bg-red-500/10 backdrop-blur-xl rounded-2xl p-6 border border-red-500/30 text-center">
+                <p class="text-sm text-red-400 mb-2">❌ Échecs</p>
+                <p id="failCount" class="text-4xl font-bold text-red-400">0</p>
+            </div>
+        </div>
+
+        <!-- Configuration -->
+        <div class="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl rounded-3xl p-8 mb-6 border border-slate-700/50">
+            <h2 class="text-3xl font-bold mb-6 text-orange-400">⚙️ Configuration Trading Ultra</h2>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                <div>
+                    <label class="block text-sm mb-2 text-orange-300 font-bold">Montant par Trade (BNB)</label>
+                    <input type="number" id="tradeAmount" value="0.01" min="0.001" step="0.001" class="w-full bg-slate-700/50 border border-orange-500/30 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-400 text-white text-lg font-bold">
+                    <p class="text-xs text-red-400 mt-1 font-bold">⚠️ Commence petit! 0.01-0.05 BNB recommandé</p>
+                </div>
+                <div>
+                    <label class="block text-sm mb-2 text-orange-300 font-bold">Profit Minimum (%)</label>
+                    <input type="number" id="minProfit" value="0.3" min="0.1" step="0.1" class="w-full bg-slate-700/50 border border-orange-500/30 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-400 text-white text-lg font-bold">
+                    <p class="text-xs text-green-400 mt-1">✨ Réduit à 0.3% pour plus d'opportunités</p>
+                </div>
+                <div>
+                    <label class="block text-sm mb-2 text-orange-300 font-bold">Slippage Max (%)</label>
+                    <input type="number" id="maxSlippage" value="1" min="0.1" step="0.1" class="w-full bg-slate-700/50 border border-orange-500/30 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-400 text-white text-lg font-bold">
+                    <p class="text-xs text-slate-400 mt-1">Protection contre variations de prix</p>
                 </div>
             </div>
 
-            <div class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4">
-                <h4 class="font-bold mb-3 text-blue-400">💰 Soldes</h4>
-                <div class="text-sm text-gray-300 space-y-1">
-                    <p>BNB: <span id="bnbBalance" class="font-bold text-yellow-400">0</span></p>
-                    <p>USDT: <span id="usdtBalance" class="font-bold text-green-400">$0</span></p>
-                    <p>Position: <span id="positionValue" class="font-bold">$0</span></p>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div>
+                    <label class="block text-sm mb-2 text-cyan-300">Max Gas (Gwei)</label>
+                    <input type="number" id="maxGas" value="5" min="1" step="0.5" class="w-full bg-slate-700/50 border border-cyan-500/30 rounded-xl px-4 py-3 focus:outline-none focus:border-cyan-400 text-white">
+                </div>
+                <div>
+                    <label class="block text-sm mb-2 text-cyan-300">Intervalle (sec)</label>
+                    <input type="number" id="scanInterval" value="8" min="3" step="1" class="w-full bg-slate-700/50 border border-cyan-500/30 rounded-xl px-4 py-3 focus:outline-none focus:border-cyan-400 text-white">
+                    <p class="text-xs text-green-400 mt-1">✨ Scan plus rapide</p>
+                </div>
+                <div>
+                    <label class="block text-sm mb-2 text-cyan-300">Type Arbitrage</label>
+                    <select id="arbType" class="w-full bg-slate-700/50 border border-cyan-500/30 rounded-xl px-4 py-3 focus:outline-none focus:border-cyan-400 text-white">
+                        <option value="both">🔥 Simple + Triangulaire</option>
+                        <option value="simple">Simple (2 swaps)</option>
+                        <option value="triangular">Triangulaire (3 swaps)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm mb-2 text-cyan-300">Mode Exécution</label>
+                    <select id="executionMode" class="w-full bg-slate-700/50 border border-cyan-500/30 rounded-xl px-4 py-3 focus:outline-none focus:border-cyan-400 text-white">
+                        <option value="manual">👁️ Manuel (Sécurisé)</option>
+                        <option value="auto">🤖 Automatique</option>
+                    </select>
                 </div>
             </div>
 
-            <div class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4">
-                <h4 class="font-bold mb-3 text-purple-400">📡 Connexions</h4>
-                <div class="text-sm text-gray-300 space-y-1">
-                    <p>Wallet: <span id="walletStatus">🔴 Non connecté</span></p>
-                    <p>WebSocket: <span id="wsStatus">🔴 Déconnecté</span></p>
-                    <p>Telegram: <span id="telegramStatus">🔴 Non configuré</span></p>
+            <!-- Boutons -->
+            <div class="flex gap-4 mb-6">
+                <button onclick="approveTokens()" id="approveBtn" class="flex-1 px-8 py-5 bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-yellow-600 hover:to-orange-700 rounded-2xl font-bold text-xl shadow-2xl transition-all">
+                    ✅ Approuver Tokens (Étape 1)
+                </button>
+                <button onclick="startRealScanner()" id="startBtn" class="flex-1 px-8 py-5 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 rounded-2xl font-bold text-xl shadow-2xl transition-all" disabled>
+                    🚀 Démarrer Trading Ultra
+                </button>
+                <button onclick="stopScanner()" id="stopBtn" class="flex-1 px-8 py-5 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 rounded-2xl font-bold text-xl shadow-2xl transition-all" disabled>
+                    ⏹️ Arrêter
+                </button>
+            </div>
+
+            <div class="bg-green-900/20 border border-green-500/30 rounded-xl p-4 text-green-200 text-sm mb-4">
+                <p class="font-bold mb-2">🚀 AMÉLIORATIONS ULTRA:</p>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 ml-4">
+                    <div>✅ 15+ tokens scannés</div>
+                    <div>✅ 6 DEX analysés</div>
+                    <div>✅ 100+ paires testées</div>
+                    <div>✅ Arbitrage triangulaire</div>
+                    <div>✅ Scan plus rapide (8s)</div>
+                    <div>✅ Profit min réduit (0.3%)</div>
+                    <div>✅ Détection optimisée</div>
+                    <div>✅ Plus d'opportunités!</div>
+                </div>
+            </div>
+
+            <div class="bg-yellow-900/20 border border-yellow-500/30 rounded-xl p-4 text-yellow-200 text-sm">
+                <p class="font-bold mb-2">📋 Checklist avant de démarrer:</p>
+                <ul class="space-y-1 ml-4">
+                    <li>✅ Wallet connecté avec suffisamment de BNB pour gas + trades</li>
+                    <li>✅ Tokens approuvés (cliquez "Approuver Tokens")</li>
+                    <li>✅ Montant de trade adapté à votre budget</li>
+                    <li>✅ Mode manuel activé pour débuter</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Opportunités Réelles -->
+        <div class="bg-gradient-to-br from-green-900/20 to-emerald-900/20 backdrop-blur-xl rounded-3xl p-6 border border-green-500/30 mb-6">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-green-400">💵 Opportunités d'Arbitrage Ultra</h2>
+                <span id="oppCountBadge" class="text-lg px-4 py-2 bg-green-500/20 rounded-full font-bold">0</span>
+            </div>
+            <div id="opportunities" class="space-y-3 max-h-[600px] overflow-y-auto scrollbar-thin">
+                <div class="text-center py-16 text-slate-400">
+                    <p class="text-6xl mb-4">🎯</p>
+                    <p class="text-lg">En attente d'opportunités</p>
+                    <p class="text-sm mt-2">Approuvez les tokens et démarrez le scanner ultra</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Historique -->
+        <div class="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl rounded-3xl p-8 mb-6 border border-slate-700/50">
+            <h2 class="text-3xl font-bold mb-6 text-cyan-400">📈 Historique des Trades Réels</h2>
+            <div id="tradeHistory" class="space-y-3 max-h-[500px] overflow-y-auto scrollbar-thin">
+                <div class="text-center py-12 text-slate-400">
+                    Aucun trade exécuté
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Tokens -->
+        <div class="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl rounded-3xl p-8 border border-slate-700/50 mb-6">
+            <h2 class="text-3xl font-bold mb-6 text-cyan-400">🪙 Tokens Scannés (15+)</h2>
+            <div id="tokensList" class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-8 gap-3">
+                <div class="text-center py-8 text-slate-400 col-span-full">
+                    Connectez votre wallet
+                </div>
+            </div>
+        </div>
+
+        <!-- Status DEX -->
+        <div class="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl rounded-3xl p-8 border border-slate-700/50">
+            <h2 class="text-3xl font-bold mb-6 text-cyan-400">🔄 DEX Utilisés (6)</h2>
+            <div id="dexList" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                <div class="text-center py-8 text-slate-400 col-span-full">
+                    Chargement...
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        // Configuration
-        const OPENOCEAN_API_BASE = 'https://open-api.openocean.finance/v3';
+        // Configuration BSC
         const BSC_CHAIN_ID = 56;
-        const OPENOCEAN_EXCHANGE = '0x6352a56caadC4F1E25CD6c75970Fa768A3304e64';
-        
-        // DEX Routers RÉELS sur BSC pour arbitrage cross-DEX
-        const DEX_ROUTERS = {
-            PCS: '0x10ED43C718714eb63d5aA57B78B54704E256024E',      // PancakeSwap V2
-            BSW: '0x3a6d8cA21D1CF76F653A67577FA0D27453350dD8',      // Biswap
-            APESWAP: '0xcF0feBd3f17CEf5b47b0cD257aCf6025c5BFf3b7',    // ApeSwap
-            BABYSWAP: '0x325E343f1dE602396E256B67eFd1F61C3A6B38Bd',  // BabySwap
-            MDEX: '0x7DAe51BD3E3376B8c7c4900E9107f12Be3AF1bA8',       // MDEX
-            BAKERYSWAP: '0xCDe540d7eAFE93aC5fE6233Bee57E1270D3E330F' // BakerySwap
-        };
-        
-        // Noms affichables
-        const DEX_NAMES = {
-            PCS: 'PancakeSwap',
-            BSW: 'Biswap',
-            APESWAP: 'ApeSwap',
-            BABYSWAP: 'BabySwap',
-            MDEX: 'MDEX',
-            BAKERYSWAP: 'BakerySwap'
-        };
-        
+
+        // 🚀 TOKENS ULTRA - 15+ tokens populaires
         const TOKENS = {
-            USDT: '0x55d398326f99059fF775485246999027B3197955',
-            BTC: '0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c',
-            ETH: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8',
-            BNB: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
-            WBNB: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'
+            WBNB: {
+                address: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
+                symbol: 'WBNB',
+                decimals: 18,
+                priority: 1
+            },
+            USDT: {
+                address: '0x55d398326f99059fF775485246999027B3197955',
+                symbol: 'USDT',
+                decimals: 18,
+                priority: 1
+            },
+            BUSD: {
+                address: '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56',
+                symbol: 'BUSD',
+                decimals: 18,
+                priority: 1
+            },
+            USDC: {
+                address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
+                symbol: 'USDC',
+                decimals: 18,
+                priority: 2
+            },
+            BTCB: {
+                address: '0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c',
+                symbol: 'BTCB',
+                decimals: 18,
+                priority: 2
+            },
+            ETH: {
+                address: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8',
+                symbol: 'ETH',
+                decimals: 18,
+                priority: 2
+            },
+            CAKE: {
+                address: '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82',
+                symbol: 'CAKE',
+                decimals: 18,
+                priority: 2
+            },
+            ADA: {
+                address: '0x3EE2200Efb3400fAbB9AacF31297cBdD1d435D47',
+                symbol: 'ADA',
+                decimals: 18,
+                priority: 3
+            },
+            DOT: {
+                address: '0x7083609fCE4d1d8Dc0C979AAb8c869Ea2C873402',
+                symbol: 'DOT',
+                decimals: 18,
+                priority: 3
+            },
+            LINK: {
+                address: '0xF8A0BF9cF54Bb92F17374d9e9A321E6a111a51bD',
+                symbol: 'LINK',
+                decimals: 18,
+                priority: 3
+            },
+            DOGE: {
+                address: '0xbA2aE424d960c26247Dd6c32edC70B295c744C43',
+                symbol: 'DOGE',
+                decimals: 8,
+                priority: 3
+            },
+            XRP: {
+                address: '0x1D2F0da169ceB9fC7B3144628dB156f3F6c60dBE',
+                symbol: 'XRP',
+                decimals: 18,
+                priority: 3
+            },
+            LTC: {
+                address: '0x4338665CBB7B2485A8855A139b75D5e34AB0DB94',
+                symbol: 'LTC',
+                decimals: 18,
+                priority: 4
+            },
+            UNI: {
+                address: '0xBf5140A22578168FD562DCcF235E5D43A02ce9B1',
+                symbol: 'UNI',
+                decimals: 18,
+                priority: 4
+            },
+            MATIC: {
+                address: '0xCC42724C6683B7E57334c4E856f4c9965ED682bD',
+                symbol: 'MATIC',
+                decimals: 18,
+                priority: 4
+            }
         };
+
+        // 🚀 DEX ULTRA - 6 DEX pour maximiser les opportunités
+        const DEX_ROUTERS = {
+            pancakeswap_v2: {
+                name: 'PancakeSwap V2',
+                router: '0x10ED43C718714eb63d5aA57B78B54704E256024E',
+                fee: 0.25
+            },
+            biswap: {
+                name: 'Biswap',
+                router: '0x3a6d8cA21D1CF76F653A67577FA0D27453350dD8',
+                fee: 0.1
+            },
+            apeswap: {
+                name: 'ApeSwap',
+                router: '0xcF0feBd3f17CEf5b47b0cD257aCf6025c5BFf3b7',
+                fee: 0.2
+            },
+            bakeryswap: {
+                name: 'BakerySwap',
+                router: '0xCDe540d7eAFE93aC5fE6233Bee57E1270D3E330F',
+                fee: 0.3
+            },
+            mdex: {
+                name: 'MDEX',
+                router: '0x7DAe51BD3E3376B8c7c4900E9107f12Be3AF1bA8',
+                fee: 0.3
+            },
+            babyswap: {
+                name: 'BabySwap',
+                router: '0x325E343f1dE602396E256B67eFd1F61C3A6B38Bd',
+                fee: 0.3
+            }
+        };
+
+        // ABIs
+        const ROUTER_ABI = [
+            'function getAmountsOut(uint amountIn, address[] memory path) view returns (uint[] memory amounts)',
+            'function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)',
+            'function swapExactETHForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline) external payable returns (uint[] memory amounts)',
+            'function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)'
+        ];
 
         const ERC20_ABI = [
-            'function approve(address spender, uint256 amount) returns (bool)',
-            'function allowance(address owner, address spender) view returns (uint256)',
-            'function balanceOf(address account) view returns (uint256)',
-            'function decimals() view returns (uint8)',
-            'function transfer(address to, uint256 amount) returns (bool)'
+            'function approve(address spender, uint256 amount) external returns (bool)',
+            'function allowance(address owner, address spender) external view returns (uint256)',
+            'function balanceOf(address account) external view returns (uint256)'
         ];
 
-        const ROUTER_ABI = [
-            'function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)',
-            'function swapTokensForExactTokens(uint amountOut, uint amountInMax, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)',
-            'function getAmountsOut(uint amountIn, address[] memory path) public view returns (uint[] memory amounts)',
-            'function getAmountsIn(uint amountOut, address[] memory path) public view returns (uint[] memory amounts)'
-        ];
-
-        // State
+        // State global
         let state = {
             account: null,
             provider: null,
             signer: null,
-            isConnected: false,
-            autoMode: false,
-            privateKey: null,
-            wallets: [],
-            currentToken: 'BTC',
-            currentPrice: 0,
-            priceHistory: [],
-            position: null,
+            isScanning: false,
+            opportunities: [],
             trades: [],
-            stats: {
-                totalProfit: 0,
-                winningTrades: 0,
-                losingTrades: 0,
-                profitHistory: []
-            },
-            riskManagement: {
-                stopLoss: { enabled: true, percent: -3 },
-                takeProfit: { enabled: true, percent: 5 }
-            },
-            telegram: {
-                botToken: '',
-                chatId: '',
-                enabled: false
-            },
-            arbitrage: {
-                enabled: false,
-                minProfit: 0.5,
-                amount: 50,
-                scanInterval: 15,
-                opportunitiesDetected: 0,
-                executed: 0,
-                totalProfit: 0,
-                bestProfit: 0,
-                currentOpportunities: []
-            },
-            keepAwake: null,
-            startTime: Date.now()
+            gasPrice: 3,
+            totalProfit: 0,
+            successCount: 0,
+            failCount: 0,
+            totalTrades: 0,
+            approvals: {},
+            pendingTx: false,
+            scanCount: 0
         };
 
-        let ws = null, botInterval = null, statsInterval = null, arbitrageInterval = null;
-        let tokenChart = null, performanceChart = null, distributionChart = null;
+        let scanInterval = null;
 
-        // Initialize
-        window.addEventListener('DOMContentLoaded', () => {
-            console.log('🚀 Bot Trading Pro 24/7 - ULTIMATE EDITION - Cross-DEX RÉEL');
-            
-            initCharts();
-            loadSavedConfig();
-            
-            if (window.ethereum && window.ethereum.selectedAddress) {
-                connectWallet();
-            }
-
-            // Update uptime
-            setInterval(updateUptime, 1000);
-        });
-
-        // ==================== WALLET CONNECTION ====================
-        
+        // Connexion Wallet
         async function connectWallet() {
             if (!window.ethereum) {
-                alert('❌ MetaMask non installé');
+                alert('❌ MetaMask non installé!\n\nTéléchargez: https://metamask.io');
                 return;
             }
 
             try {
                 const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
                 const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-                
+
                 if (chainId !== '0x38') {
-                    await window.ethereum.request({
-                        method: 'wallet_switchEthereumChain',
-                        params: [{ chainId: '0x38' }],
-                    });
+                    try {
+                        await window.ethereum.request({
+                            method: 'wallet_switchEthereumChain',
+                            params: [{ chainId: '0x38' }]
+                        });
+                    } catch (error) {
+                        alert('❌ Veuillez basculer vers BSC Mainnet dans MetaMask');
+                        return;
+                    }
                 }
-                
+
                 state.account = accounts[0];
                 state.provider = new ethers.providers.Web3Provider(window.ethereum);
                 state.signer = state.provider.getSigner();
-                state.isConnected = true;
-                
+
+                const balance = await state.provider.getBalance(state.account);
+                const balanceBNB = parseFloat(ethers.utils.formatEther(balance));
+
+                const gasPrice = await state.provider.getGasPrice();
+                state.gasPrice = parseFloat(ethers.utils.formatUnits(gasPrice, 'gwei'));
+
+                document.getElementById('walletText').textContent = `${state.account.slice(0, 6)}...${state.account.slice(-4)}`;
+                document.getElementById('bnbBalance').textContent = balanceBNB.toFixed(4);
+                document.getElementById('gasPrice').textContent = state.gasPrice.toFixed(1);
+                document.getElementById('walletInfo').classList.remove('hidden');
+
                 console.log('✅ Wallet connecté:', state.account);
-                
-                await updateBalances();
-                showAllSections();
-                connectWebSocket();
-                
-                document.getElementById('connectBtn').className = 
-                    'flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all bg-green-600 hover:bg-green-700';
-                document.getElementById('walletText').textContent = 
-                    `${state.account.slice(0, 6)}...${state.account.slice(-4)}`;
-                document.getElementById('walletStatus').innerHTML = '🟢 Connecté';
-                
+                console.log('💰 Balance:', balanceBNB, 'BNB');
+
+                if (balanceBNB < 0.05) {
+                    alert(`⚠️ Balance faible: ${balanceBNB.toFixed(4)} BNB\n\nVous avez besoin d'au moins 0.05 BNB pour:\n- Gas des transactions\n- Montant des trades\n\nRechargez votre wallet avant de continuer.`);
+                }
+
+                displayTokensList();
+                displayDEXList();
+                await checkApprovals();
+
             } catch (error) {
                 console.error('❌ Erreur connexion:', error);
-                alert('Erreur connexion: ' + error.message);
+                alert('Erreur: ' + error.message);
             }
         }
 
-        async function updateBalances() {
-            try {
-                const bnbBalance = await state.provider.getBalance(state.account);
-                const bnb = parseFloat(ethers.utils.formatEther(bnbBalance)).toFixed(4);
-                
-                const usdtContract = new ethers.Contract(TOKENS.USDT, ERC20_ABI, state.provider);
-                const usdtBalance = await usdtContract.balanceOf(state.account);
-                const usdt = parseFloat(ethers.utils.formatUnits(usdtBalance, 18)).toFixed(2);
-                
-                document.getElementById('bnbBalance').textContent = bnb;
-                document.getElementById('usdtBalance').textContent = '<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bot Trading Pro 24/7 - Ultimate Edition</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <style>
-        body {
-            background: linear-gradient(to bottom right, #0f172a, #581c87, #0f172a);
-            min-height: 100vh;
-        }
-        .animate-spin {
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        @keyframes glow {
-            0%, 100% { box-shadow: 0 0 5px rgba(34, 197, 94, 0.5); }
-            50% { box-shadow: 0 0 20px rgba(34, 197, 94, 0.8); }
-        }
-        .pulse {
-            animation: pulse 2s ease-in-out infinite;
-        }
-        .glow {
-            animation: glow 2s ease-in-out infinite;
-        }
-        .keep-awake-indicator {
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            background: rgba(34, 197, 94, 0.9);
-            color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: bold;
-            z-index: 9999;
-            box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
-        }
-    </style>
-</head>
-<body class="text-white p-4 md:p-6">
-    <!-- Keep Awake Indicator -->
-    <div id="keepAwakeIndicator" class="keep-awake-indicator hidden">
-        ⚡ Mode 24/7 ACTIF
-    </div>
-
-    <div class="max-w-7xl mx-auto">
-        <!-- Header -->
-        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-            <div>
-                <h1 class="text-3xl md:text-4xl font-bold bg-gradient-to-r from-yellow-400 to-orange-500 bg-clip-text text-transparent">
-                    Bot Trading Pro 24/7
-                </h1>
-                <p class="text-gray-400 mt-2">🤖 Auto • 🌊 Cross-DEX Réel • 💎 Multi-Wallet • 📱 Telegram</p>
-            </div>
-            
-            <div class="flex gap-3">
-                <button onclick="openTelegramChannel()" class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-blue-500 to-cyan-500 hover:opacity-90 rounded-lg font-semibold transition-all shadow-lg">
-                    <span>📱</span>
-                    Telegram
-                    <span class="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full pulse">LIVE</span>
-                </button>
-                
-                <button onclick="connectWallet()" id="connectBtn" class="flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-500 hover:to-orange-600">
-                    <span>👛</span>
-                    <span id="walletText">Connecter</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- Multi-Wallet Manager -->
-        <div id="multiWalletSection" class="bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-2 border-purple-500 rounded-xl p-6 mb-6 hidden">
-            <div class="flex justify-between items-center mb-4">
-                <div>
-                    <h3 class="text-2xl font-bold flex items-center gap-2">
-                        <span>💼</span>
-                        Gestion Multi-Wallet
-                    </h3>
-                    <p class="text-sm text-gray-300 mt-1">Diversifiez vos positions sur plusieurs wallets</p>
-                </div>
-                <button onclick="addWallet()" class="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 rounded-lg font-semibold transition-all">
-                    + Ajouter Wallet
-                </button>
-            </div>
-
-            <div id="walletsList" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <!-- Wallets seront ajoutés ici -->
-            </div>
-        </div>
-
-        <!-- Mode 24/7 Configuration -->
-        <div id="autoModeSection" class="bg-gradient-to-r from-red-500/20 to-orange-500/20 border-2 border-red-500 rounded-xl p-6 mb-6 hidden">
-            <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
-                <span>🔐</span>
-                Configuration Trading 24/7 Automatique
-            </h3>
-            
-            <div class="bg-red-900/30 border border-red-500 rounded-lg p-4 mb-4">
-                <p class="text-red-300 font-bold mb-2">⚠️ AVERTISSEMENTS CRITIQUES</p>
-                <ul class="text-sm text-red-200 space-y-1">
-                    <li>• Utilisez UNIQUEMENT un wallet dédié au trading</li>
-                    <li>• Ne mettez que le capital que vous pouvez perdre</li>
-                    <li>• La clé est stockée EN MÉMOIRE uniquement (effacée à la fermeture)</li>
-                    <li>• Système anti-veille activé automatiquement</li>
-                    <li>• Gardez l'onglet ouvert pour le mode 24/7</li>
-                    <li>• Stop-loss automatique pour limiter les pertes</li>
-                </ul>
-            </div>
-
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm text-gray-400 mb-2">Clé Privée du Wallet de Trading</label>
-                    <input type="password" id="privateKeyInput" placeholder="0x... (optionnel - laissez vide pour MetaMask manuel)" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-red-400">
-                    <p class="text-xs text-gray-400 mt-1">
-                        <span class="text-yellow-400">⚡</span> Mode auto 24/7 si remplie | Mode manuel MetaMask si vide
-                    </p>
-                </div>
-                
-                <button onclick="togglePrivateKeyVisibility()" class="text-sm text-blue-400 hover:underline">
-                    👁️ Afficher/Masquer la clé
-                </button>
-
-                <div class="grid grid-cols-2 gap-4">
-                    <button onclick="activateAutoMode()" id="activateAutoBtn" class="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 rounded-lg font-semibold transition-all">
-                        ✅ Activer Mode Auto 24/7
-                    </button>
-                    <button onclick="deactivateAutoMode()" id="deactivateAutoBtn" class="px-6 py-3 bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 rounded-lg font-semibold transition-all hidden">
-                        ⏸️ Désactiver Mode Auto
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Stop-Loss & Take-Profit -->
-        <div id="riskManagementSection" class="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border-2 border-yellow-500 rounded-xl p-6 mb-6 hidden">
-            <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
-                <span>🛡️</span>
-                Gestion des Risques Automatique
-            </h3>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <!-- Stop-Loss -->
-                <div class="bg-slate-800/50 rounded-xl p-4 border border-red-500/30">
-                    <div class="flex items-center justify-between mb-3">
-                        <div class="flex items-center gap-2">
-                            <span class="text-red-400 text-2xl">🛑</span>
-                            <div>
-                                <p class="font-bold text-red-400">Stop-Loss</p>
-                                <p class="text-xs text-gray-400">Protection contre les pertes</p>
-                            </div>
-                        </div>
-                        <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" id="stopLossToggle" checked class="sr-only peer" onchange="toggleStopLoss()">
-                            <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
-                        </label>
-                    </div>
-                    <div id="stopLossSettings">
-                        <label class="block text-xs text-gray-400 mb-1">Perte Maximum (%)</label>
-                        <input type="number" id="stopLossPercent" value="-3" step="0.5" max="-0.5" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-                        <p class="text-xs text-gray-500 mt-1">Vente auto si perte ≥ ce %</p>
-                    </div>
-                </div>
-
-                <!-- Take-Profit -->
-                <div class="bg-slate-800/50 rounded-xl p-4 border border-green-500/30">
-                    <div class="flex items-center justify-between mb-3">
-                        <div class="flex items-center gap-2">
-                            <span class="text-green-400 text-2xl">💰</span>
-                            <div>
-                                <p class="font-bold text-green-400">Take-Profit</p>
-                                <p class="text-xs text-gray-400">Sécurisation des gains</p>
-                            </div>
-                        </div>
-                        <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" id="takeProfitToggle" checked class="sr-only peer" onchange="toggleTakeProfit()">
-                            <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
-                        </label>
-                    </div>
-                    <div id="takeProfitSettings">
-                        <label class="block text-xs text-gray-400 mb-1">Profit Cible (%)</label>
-                        <input type="number" id="takeProfitPercent" value="5" step="0.5" min="1" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-400">
-                        <p class="text-xs text-gray-500 mt-1">Vente auto si profit ≥ ce %</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                <p class="text-xs text-blue-200">
-                    💡 <strong>Conseil :</strong> Stop-Loss à -3% et Take-Profit à +5% = ratio risque/rendement 1:1.67
-                </p>
-            </div>
-        </div>
-
-        <!-- Telegram Notifications -->
-        <div id="telegramSection" class="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border-2 border-blue-500 rounded-xl p-6 mb-6 hidden">
-            <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
-                <span>📱</span>
-                Notifications Telegram
-            </h3>
-
-            <div class="bg-blue-900/30 border border-blue-500 rounded-lg p-4 mb-4">
-                <p class="text-blue-300 font-bold mb-2">🤖 Configuration Bot Telegram</p>
-                <ol class="text-sm text-blue-200 space-y-1">
-                    <li>1. Créez un bot via @BotFather sur Telegram</li>
-                    <li>2. Copiez le token du bot</li>
-                    <li>3. Démarrez une conversation avec votre bot</li>
-                    <li>4. Récupérez votre Chat ID via @userinfobot</li>
-                </ol>
-            </div>
-
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm text-gray-400 mb-2">Bot Token</label>
-                    <input type="password" id="telegramBotToken" placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-400">
-                </div>
-
-                <div>
-                    <label class="block text-sm text-gray-400 mb-2">Chat ID</label>
-                    <input type="text" id="telegramChatId" placeholder="123456789" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-400">
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                    <button onclick="testTelegramNotification()" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-all">
-                        🧪 Tester Notification
-                    </button>
-                    <button onclick="saveTelegramConfig()" class="px-6 py-3 bg-green-600 hover:bg-green-700 rounded-lg font-semibold transition-all">
-                        💾 Sauvegarder Config
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Arbitrage Panel -->
-        <div id="arbitragePanel" class="bg-gradient-to-r from-green-500/20 to-emerald-500/20 border-2 border-green-500 rounded-xl p-6 mb-6 hidden">
-            <div class="flex justify-between items-center mb-4">
-                <div>
-                    <h3 class="text-2xl font-bold flex items-center gap-2">
-                        <span>💎</span>
-                        Arbitrage Cross-DEX RÉEL
-                    </h3>
-                    <p class="text-sm text-gray-300 mt-1">PCS • BSW • ApeSwap • BabySwap • MDEX • BakerySwap</p>
-                </div>
-                <button onclick="toggleArbitrage()" id="arbitrageToggle" class="flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all bg-green-600 hover:bg-green-700">
-                    <span id="arbIcon">▶️</span>
-                    <span id="arbText">Démarrer</span>
-                </button>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4">
-                    <label class="block text-sm text-gray-400 mb-2">Profit Minimum (%)</label>
-                    <input type="number" id="minArbitrageProfit" value="0.5" step="0.1" min="0.1" max="10" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-green-400">
-                    <p class="text-xs text-gray-400 mt-1">Profit net minimum après frais</p>
-                </div>
-
-                <div class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4">
-                    <label class="block text-sm text-gray-400 mb-2">Montant par Arbitrage (USDT)</label>
-                    <input type="number" id="arbitrageAmount" value="50" step="10" min="10" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-green-400">
-                    <p class="text-xs text-gray-400 mt-1">Montant USDT par exécution</p>
-                </div>
-
-                <div class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4">
-                    <label class="block text-sm text-gray-400 mb-2">Fréquence Scan (sec)</label>
-                    <input type="number" id="arbitrageScanInterval" value="15" step="5" min="10" max="60" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-green-400">
-                    <p class="text-xs text-gray-400 mt-1">Intervalle entre chaque scan</p>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                <div class="bg-slate-800/50 backdrop-blur-sm border border-green-600 rounded-xl p-4">
-                    <p class="text-gray-400 text-xs">Opportunités Détectées</p>
-                    <p class="text-2xl font-bold mt-1 text-green-400"><span id="arbOpportunities">0</span></p>
-                </div>
-                
-                <div class="bg-slate-800/50 backdrop-blur-sm border border-blue-600 rounded-xl p-4">
-                    <p class="text-gray-400 text-xs">Arbitrages Exécutés</p>
-                    <p class="text-2xl font-bold mt-1 text-blue-400"><span id="arbExecuted">0</span></p>
-                </div>
-                
-                <div class="bg-slate-800/50 backdrop-blur-sm border border-yellow-600 rounded-xl p-4">
-                    <p class="text-gray-400 text-xs">Profit Total Arbitrage</p>
-                    <p class="text-2xl font-bold mt-1 text-yellow-400">$<span id="arbProfit">0.00</span></p>
-                </div>
-
-                <div class="bg-slate-800/50 backdrop-blur-sm border border-purple-600 rounded-xl p-4">
-                    <p class="text-gray-400 text-xs">Meilleur Profit</p>
-                    <p class="text-2xl font-bold mt-1 text-purple-400"><span id="arbBestProfit">0.00</span>%</p>
-                </div>
-            </div>
-
-            <div id="arbitrageOpportunities" class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4">
-                <h4 class="text-lg font-bold mb-3 flex items-center gap-2">
-                    <span>🎯</span>
-                    Opportunités en Temps Réel
-                </h4>
-                <div id="arbOpportunitiesList">
-                    <div class="text-center py-8 text-gray-400">
-                        <span class="text-4xl">🔍</span>
-                        <p>Cliquez sur "Démarrer" pour scanner...</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                <p class="text-xs text-blue-200">
-                    💡 <strong>Mode Auto 24/7 :</strong> Si activé, les opportunités seront exécutées automatiquement dès détection !
-                </p>
-            </div>
-        </div>
-
-        <!-- Dashboard Statistiques Avancées -->
-        <div id="statsSection" class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6 mb-6 hidden">
-            <h3 class="text-2xl font-bold mb-4 flex items-center gap-2">
-                <span>📊</span>
-                Dashboard Trading
-            </h3>
-
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div class="bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500 rounded-xl p-4">
-                    <p class="text-gray-400 text-xs">Profit Total</p>
-                    <p class="text-2xl font-bold mt-1 text-green-400">$<span id="totalProfit">0.00</span></p>
-                    <p class="text-xs text-green-300 mt-1">+<span id="totalProfitPercent">0.00</span>%</p>
-                </div>
-
-                <div class="bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500 rounded-xl p-4">
-                    <p class="text-gray-400 text-xs">Trades Gagnants</p>
-                    <p class="text-2xl font-bold mt-1 text-blue-400"><span id="winningTrades">0</span></p>
-                    <p class="text-xs text-blue-300 mt-1">Win Rate: <span id="winRate">0</span>%</p>
-                </div>
-
-                <div class="bg-gradient-to-br from-red-500/20 to-pink-500/20 border border-red-500 rounded-xl p-4">
-                    <p class="text-gray-400 text-xs">Trades Perdants</p>
-                    <p class="text-2xl font-bold mt-1 text-red-400"><span id="losingTrades">0</span></p>
-                    <p class="text-xs text-red-300 mt-1">Perte Moy: <span id="avgLoss">0</span>%</p>
-                </div>
-
-                <div class="bg-gradient-to-br from-yellow-500/20 to-orange-500/20 border border-yellow-500 rounded-xl p-4">
-                    <p class="text-gray-400 text-xs">Ratio R/R</p>
-                    <p class="text-2xl font-bold mt-1 text-yellow-400"><span id="riskRewardRatio">0</span></p>
-                    <p class="text-xs text-yellow-300 mt-1">Sharpe: <span id="sharpeRatio">0</span></p>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- Performance Chart -->
-                <div class="bg-slate-700/50 rounded-xl p-4">
-                    <h4 class="font-bold mb-3">📈 Performance Cumulée</h4>
-                    <div class="h-64">
-                        <canvas id="performanceChart"></canvas>
-                    </div>
-                </div>
-
-                <!-- Distribution des Profits -->
-                <div class="bg-slate-700/50 rounded-xl p-4">
-                    <h4 class="font-bold mb-3">📊 Distribution Profits/Pertes</h4>
-                    <div class="h-64">
-                        <canvas id="distributionChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Graphique du Token Tradé -->
-        <div id="tokenChartSection" class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6 mb-6 hidden">
-            <div class="flex justify-between items-center mb-4">
-                <div>
-                    <h3 class="text-2xl font-bold flex items-center gap-2">
-                        <span>📈</span>
-                        Graphique <span id="currentTokenName" class="text-yellow-400">BTC</span>/USDT
-                    </h3>
-                    <p class="text-sm text-gray-400 mt-1">Prix en temps réel avec indicateurs techniques</p>
-                </div>
-                <div class="flex gap-2">
-                    <button onclick="changeTimeframe('1m')" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm">1m</button>
-                    <button onclick="changeTimeframe('5m')" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm">5m</button>
-                    <button onclick="changeTimeframe('15m')" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm">15m</button>
-                    <button onclick="changeTimeframe('1h')" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm">1h</button>
-                </div>
-            </div>
-
-            <div class="h-96 mb-4">
-                <canvas id="tokenChart"></canvas>
-            </div>
-
-            <div class="grid grid-cols-4 gap-3">
-                <div class="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                    <p class="text-xs text-gray-400">Prix Actuel</p>
-                    <p class="text-lg font-bold text-blue-400">$<span id="liveTokenPrice">0</span></p>
-                </div>
-                <div class="p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
-                    <p class="text-xs text-gray-400">RSI (14)</p>
-                    <p class="text-lg font-bold text-purple-400"><span id="liveRSI">50</span></p>
-                </div>
-                <div class="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                    <p class="text-xs text-gray-400">EMA 20</p>
-                    <p class="text-lg font-bold text-yellow-400">$<span id="liveEMA20">0</span></p>
-                </div>
-                <div class="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                    <p class="text-xs text-gray-400">Volume 24h</p>
-                    <p class="text-lg font-bold text-red-400">$<span id="liveVolume">0</span>M</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Trading Controls -->
-        <div id="tradingSection" class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6 mb-6 hidden">
-            <h3 class="text-2xl font-bold mb-4">🤖 Contrôles de Trading</h3>
-            
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-gray-400 mb-2">Token à trader</label>
-                    <select id="cryptoSelect" onchange="changeCrypto()" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-yellow-400">
-                        <option value="BTC">Bitcoin (BTC)</option>
-                        <option value="ETH">Ethereum (ETH)</option>
-                        <option value="BNB">BNB</option>
-                    </select>
-                </div>
-
-                <div>
-                    <label class="block text-sm text-gray-400 mb-2">Capital de trading</label>
-                    <input type="number" id="capitalInput" placeholder="Ex: 100" step="10" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-yellow-400"> + usdt;
-                
-            } catch (error) {
-                console.error('Erreur balances:', error);
-            }
-        }
-
-        function showAllSections() {
-            document.getElementById('multiWalletSection').classList.remove('hidden');
-            document.getElementById('autoModeSection').classList.remove('hidden');
-            document.getElementById('riskManagementSection').classList.remove('hidden');
-            document.getElementById('telegramSection').classList.remove('hidden');
-            document.getElementById('arbitragePanel').classList.remove('hidden');
-            document.getElementById('statsSection').classList.remove('hidden');
-            document.getElementById('tokenChartSection').classList.remove('hidden');
-            document.getElementById('tradingSection').classList.remove('hidden');
-            document.getElementById('tradesSection').classList.remove('hidden');
-        }
-
-        // ==================== MODE AUTO 24/7 ====================
-
-        function togglePrivateKeyVisibility() {
-            const input = document.getElementById('privateKeyInput');
-            input.type = input.type === 'password' ? 'text' : 'password';
-        }
-
-        async function activateAutoMode() {
-            const privateKeyInput = document.getElementById('privateKeyInput').value.trim();
-            
-            if (!privateKeyInput) {
-                alert('⚠️ Mode Manuel Activé\n\nLe bot utilisera MetaMask pour les confirmations.\nVous devrez confirmer chaque transaction manuellement.');
-                state.autoMode = false;
-                document.getElementById('systemMode').textContent = 'Manuel MetaMask';
-                return;
-            }
-
-            try {
-                // Tester la clé privée
-                const wallet = new ethers.Wallet(privateKeyInput);
-                console.log('🔐 Wallet test:', wallet.address);
-                
-                const confirm = window.confirm(`🤖 MODE AUTOMATIQUE 24/7\n\nWallet détecté: ${wallet.address}\n\n⚠️ AVERTISSEMENT:\n• Le bot tradra AUTOMATIQUEMENT\n• Sans confirmation MetaMask\n• 24h/24 tant que l'onglet est ouvert\n• Stop-Loss et Take-Profit automatiques\n• Anti-veille activé\n\nContinuer ?`);
-                
-                if (!confirm) return;
-                
-                state.privateKey = privateKeyInput;
-                state.signer = wallet.connect(state.provider);
-                state.autoMode = true;
-                state.account = wallet.address;
-                
-                // Activer anti-veille
-                activateKeepAwake();
-                
-                document.getElementById('systemMode').textContent = 'Auto 24/7';
-                document.getElementById('activateAutoBtn').classList.add('hidden');
-                document.getElementById('deactivateAutoBtn').classList.remove('hidden');
-                
-                await updateBalances();
-                
-                await sendTelegramNotification(`🤖 MODE AUTO 24/7 ACTIVÉ\n\nWallet: ${wallet.address}\nCapital: En attente\n\n⚡ Bot prêt à trader !`);
-                
-                alert('✅ Mode Auto 24/7 activé !\n\n• Trading automatique ON\n• Anti-veille ON\n• Stop-Loss/Take-Profit ON\n\nLe bot est prêt !');
-                
-            } catch (error) {
-                console.error('❌ Erreur:', error);
-                alert('❌ Clé privée invalide !\n\nVérifiez que vous avez entré une clé privée valide commençant par 0x');
-            }
-        }
-
-        function deactivateAutoMode() {
-            const confirm = window.confirm('⏸️ Désactiver le mode Auto 24/7 ?');
-            if (!confirm) return;
-            
-            state.autoMode = false;
-            state.privateKey = null;
-            
-            deactivateKeepAwake();
-            
-            document.getElementById('systemMode').textContent = 'Manuel';
-            document.getElementById('activateAutoBtn').classList.remove('hidden');
-            document.getElementById('deactivateAutoBtn').classList.add('hidden');
-            document.getElementById('privateKeyInput').value = '';
-            
-            sendTelegramNotification('⏸️ Mode Auto 24/7 désactivé');
-            
-            alert('✅ Mode Auto désactivé\n\nLe bot est maintenant en mode manuel.');
-        }
-
-        // ==================== KEEP AWAKE (ANTI-VEILLE) ====================
-
-        function activateKeepAwake() {
-            console.log('⚡ Activation anti-veille...');
-            
-            // Wake Lock API (si supporté)
-            if ('wakeLock' in navigator) {
-                navigator.wakeLock.request('screen').then(wakeLock => {
-                    state.keepAwake = wakeLock;
-                    console.log('✅ Wake Lock activé');
-                }).catch(err => {
-                    console.log('⚠️ Wake Lock non disponible:', err);
-                    fallbackKeepAwake();
-                });
-            } else {
-                fallbackKeepAwake();
-            }
-            
-            document.getElementById('keepAwakeIndicator').classList.remove('hidden');
-            document.getElementById('keepAwakeStatus').innerHTML = '🟢 Actif';
-        }
-
-        function fallbackKeepAwake() {
-            // Méthode alternative : jouer un son silencieux en boucle
-            const audio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA');
-            audio.loop = true;
-            audio.play().catch(() => {});
-            
-            // Garder l'écran actif via requestAnimationFrame
-            function keepActive() {
-                if (state.autoMode) {
-                    requestAnimationFrame(keepActive);
-                }
-            }
-            keepActive();
-            
-            console.log('✅ Anti-veille fallback activé');
-        }
-
-        function deactivateKeepAwake() {
-            if (state.keepAwake) {
-                state.keepAwake.release();
-                state.keepAwake = null;
-            }
-            
-            document.getElementById('keepAwakeIndicator').classList.add('hidden');
-            document.getElementById('keepAwakeStatus').innerHTML = '🔴 Inactif';
-            
-            console.log('⏸️ Anti-veille désactivé');
-        }
-
-        function updateUptime() {
-            const elapsed = Date.now() - state.startTime;
-            const hours = Math.floor(elapsed / 3600000);
-            const minutes = Math.floor((elapsed % 3600000) / 60000);
-            const seconds = Math.floor((elapsed % 60000) / 1000);
-            
-            document.getElementById('uptimeStatus').textContent = `${hours}h ${minutes}m ${seconds}s`;
-        }
-
-        // ==================== STOP-LOSS & TAKE-PROFIT ====================
-
-        function toggleStopLoss() {
-            const toggle = document.getElementById('stopLossToggle');
-            state.riskManagement.stopLoss.enabled = toggle.checked;
-            
-            const settings = document.getElementById('stopLossSettings');
-            settings.style.display = toggle.checked ? 'block' : 'none';
-            
-            console.log('🛑 Stop-Loss:', toggle.checked ? 'ON' : 'OFF');
-        }
-
-        function toggleTakeProfit() {
-            const toggle = document.getElementById('takeProfitToggle');
-            state.riskManagement.takeProfit.enabled = toggle.checked;
-            
-            const settings = document.getElementById('takeProfitSettings');
-            settings.style.display = toggle.checked ? 'block' : 'none';
-            
-            console.log('💰 Take-Profit:', toggle.checked ? 'ON' : 'OFF');
-        }
-
-        async function checkRiskManagement() {
-            if (!state.position) return false;
-            
-            const currentPrice = state.currentPrice;
-            const entryPrice = state.position.entryPrice;
-            const profitPercent = ((currentPrice - entryPrice) / entryPrice) * 100;
-            
-            // Stop-Loss
-            if (state.riskManagement.stopLoss.enabled) {
-                const stopLossPercent = parseFloat(document.getElementById('stopLossPercent').value);
-                if (profitPercent <= stopLossPercent) {
-                    console.log(`🛑 STOP-LOSS DÉCLENCHÉ ! Perte: ${profitPercent.toFixed(2)}%`);
-                    await sendTelegramNotification(`🛑 STOP-LOSS\n\nPerte: ${profitPercent.toFixed(2)}%\nVente immédiate !`);
-                    await executeSell('stop_loss');
-                    return true;
-                }
-            }
-            
-            // Take-Profit
-            if (state.riskManagement.takeProfit.enabled) {
-                const takeProfitPercent = parseFloat(document.getElementById('takeProfitPercent').value);
-                if (profitPercent >= takeProfitPercent) {
-                    console.log(`💰 TAKE-PROFIT DÉCLENCHÉ ! Profit: ${profitPercent.toFixed(2)}%`);
-                    await sendTelegramNotification(`💰 TAKE-PROFIT\n\nProfit: ${profitPercent.toFixed(2)}%\nVente immédiate !`);
-                    await executeSell('take_profit');
-                    return true;
-                }
-            }
-            
-            return false;
-        }
-
-        // ==================== TELEGRAM NOTIFICATIONS ====================
-
-        async function sendTelegramNotification(message) {
-            if (!state.telegram.enabled || !state.telegram.botToken || !state.telegram.chatId) {
-                return;
-            }
-            
-            try {
-                const url = `https://api.telegram.org/bot${state.telegram.botToken}/sendMessage`;
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        chat_id: state.telegram.chatId,
-                        text: message,
-                        parse_mode: 'HTML'
-                    })
-                });
-                
-                if (response.ok) {
-                    console.log('📱 Notification envoyée');
-                }
-            } catch (error) {
-                console.error('❌ Erreur Telegram:', error);
-            }
-        }
-
-        async function testTelegramNotification() {
-            const botToken = document.getElementById('telegramBotToken').value.trim();
-            const chatId = document.getElementById('telegramChatId').value.trim();
-            
-            if (!botToken || !chatId) {
-                alert('❌ Veuillez remplir Bot Token et Chat ID');
-                return;
-            }
-            
-            try {
-                const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        chat_id: chatId,
-                        text: '🧪 <b>TEST NOTIFICATION</b>\n\nVotre bot Telegram est bien configuré ! ✅',
-                        parse_mode: 'HTML'
-                    })
-                });
-                
-                if (response.ok) {
-                    alert('✅ Test réussi !\n\nVérifiez votre Telegram, vous devriez avoir reçu un message.');
-                } else {
-                    const error = await response.json();
-                    alert('❌ Erreur:\n\n' + JSON.stringify(error, null, 2));
-                }
-            } catch (error) {
-                alert('❌ Erreur réseau:\n\n' + error.message);
-            }
-        }
-
-        function saveTelegramConfig() {
-            const botToken = document.getElementById('telegramBotToken').value.trim();
-            const chatId = document.getElementById('telegramChatId').value.trim();
-            
-            if (!botToken || !chatId) {
-                alert('❌ Veuillez remplir les deux champs');
-                return;
-            }
-            
-            state.telegram.botToken = botToken;
-            state.telegram.chatId = chatId;
-            state.telegram.enabled = true;
-            
-            localStorage.setItem('telegram_config', JSON.stringify(state.telegram));
-            
-            document.getElementById('telegramStatus').innerHTML = '🟢 Configuré';
-            
-            alert('✅ Configuration Telegram sauvegardée !');
-            
-            sendTelegramNotification('🤖 <b>Bot Trading configuré</b>\n\nVous recevrez les notifications ici !');
-        }
-
-        // ==================== MULTI-WALLET ====================
-
-        function addWallet() {
-            const privateKey = prompt('Entrez la clé privée du wallet à ajouter:');
-            if (!privateKey) return;
-            
-            try {
-                const wallet = new ethers.Wallet(privateKey);
-                
-                if (state.wallets.find(w => w.address === wallet.address)) {
-                    alert('❌ Ce wallet est déjà ajouté');
-                    return;
-                }
-                
-                state.wallets.push({
-                    address: wallet.address,
-                    privateKey: privateKey,
-                    capital: 0,
-                    active: false
-                });
-                
-                renderWallets();
-                alert(`✅ Wallet ajouté:\n${wallet.address}`);
-                
-            } catch (error) {
-                alert('❌ Clé privée invalide');
-            }
-        }
-
-        function renderWallets() {
-            const container = document.getElementById('walletsList');
-            
-            if (state.wallets.length === 0) {
-                container.innerHTML = `
-                    <div class="col-span-2 text-center py-8 text-gray-400">
-                        <span class="text-4xl">👛</span>
-                        <p>Aucun wallet ajouté</p>
-                        <p class="text-xs mt-2">Cliquez sur "+ Ajouter Wallet" pour commencer</p>
-                    </div>
-                `;
-                return;
-            }
-            
-            container.innerHTML = state.wallets.map((wallet, index) => `
-                <div class="bg-slate-700/50 rounded-xl p-4 border border-slate-600">
-                    <div class="flex justify-between items-start mb-3">
-                        <div>
-                            <p class="font-mono text-sm">${wallet.address.slice(0, 10)}...${wallet.address.slice(-8)}</p>
-                            <p class="text-xs text-gray-400 mt-1">Capital: ${wallet.capital} USDT</p>
-                        </div>
-                        <span class="${wallet.active ? 'text-green-400' : 'text-gray-500'} text-2xl">
-                            ${wallet.active ? '🟢' : '⚪'}
-                        </span>
-                    </div>
-                    <div class="flex gap-2">
-                        <button onclick="toggleWallet(${index})" class="flex-1 px-3 py-2 ${wallet.active ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'} rounded text-sm">
-                            ${wallet.active ? 'Désactiver' : 'Activer'}
-                        </button>
-                        <button onclick="removeWallet(${index})" class="px-3 py-2 bg-red-600 hover:bg-red-700 rounded text-sm">
-                            🗑️
-                        </button>
-                    </div>
+        // Afficher liste tokens
+        function displayTokensList() {
+            const container = document.getElementById('tokensList');
+            container.innerHTML = Object.entries(TOKENS).map(([key, token]) => `
+                <div class="p-3 bg-gradient-to-br from-cyan-500/10 to-blue-500/10 rounded-xl border border-cyan-500/30 text-center">
+                    <p class="text-lg font-bold text-cyan-400">${token.symbol}</p>
+                    <p class="text-xs text-slate-400">Priority ${token.priority}</p>
                 </div>
             `).join('');
         }
 
-        function toggleWallet(index) {
-            state.wallets[index].active = !state.wallets[index].active;
-            renderWallets();
+        // Afficher liste DEX
+        function displayDEXList() {
+            const container = document.getElementById('dexList');
+            container.innerHTML = Object.entries(DEX_ROUTERS).map(([key, dex]) => `
+                <div class="p-4 bg-gradient-to-br from-purple-500/10 to-pink-500/10 rounded-xl border border-purple-500/30 text-center">
+                    <p class="text-sm font-bold text-purple-400">${dex.name}</p>
+                    <p class="text-xs text-slate-400">Fee: ${dex.fee}%</p>
+                </div>
+            `).join('');
         }
 
-        function removeWallet(index) {
-            if (!confirm('Supprimer ce wallet ?')) return;
-            state.wallets.splice(index, 1);
-            renderWallets();
+        // Vérifier les approvals
+        async function checkApprovals() {
+            const container = document.getElementById('tokensList');
+
+            let totalApprovals = 0;
+            let completedApprovals = 0;
+
+            for (const [tokenKey, token] of Object.entries(TOKENS)) {
+                if (tokenKey === 'WBNB') continue;
+
+                for (const [dexKey, dex] of Object.entries(DEX_ROUTERS)) {
+                    totalApprovals++;
+                    try {
+                        const tokenContract = new ethers.Contract(token.address, ERC20_ABI, state.provider);
+                        const allowance = await tokenContract.allowance(state.account, dex.router);
+                        const isApproved = allowance.gt(ethers.utils.parseEther('1000'));
+
+                        const key = `${tokenKey}-${dexKey}`;
+                        state.approvals[key] = isApproved;
+
+                        if (isApproved) completedApprovals++;
+
+                    } catch (error) {
+                        console.warn(`Erreur vérification ${tokenKey}-${dexKey}:`, error.message);
+                    }
+                }
+            }
+
+            const allApproved = completedApprovals === totalApprovals;
+            const percentApproved = Math.round((completedApprovals / totalApprovals) * 100);
+
+            document.getElementById('approvalStatus').textContent = allApproved
+                ? '✅ Tous approuvés'
+                : `⚠️ ${percentApproved}% (${completedApprovals}/${totalApprovals})`;
+            document.getElementById('approvalStatus').className = allApproved ? 'text-green-400' : 'text-yellow-400';
+
+            if (allApproved) {
+                document.getElementById('startBtn').disabled = false;
+            }
         }
 
-        // ==================== CHARTS ====================
+        // Approuver tous les tokens
+        async function approveTokens() {
+            if (!state.account) {
+                alert('❌ Connectez d\'abord votre wallet');
+                return;
+            }
 
-        function initCharts() {
-            // Token Chart
-            const ctxToken = document.getElementById('tokenChart').getContext('2d');
-            tokenChart = new Chart(ctxToken, {
-                type: 'line',
-                data: {
-                    labels: [],
-                    datasets: [{
-                        label: 'Prix',
-                        data: [],
-                        borderColor: 'rgb(59, 130, 246)',
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                        fill: true,
-                        tension: 0.4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false }
-                    },
-                    scales: {
-                        y: {
-                            ticks: { color: 'rgb(156, 163, 175)' },
-                            grid: { color: 'rgba(75, 85, 99, 0.3)' }
-                        },
-                        x: {
-                            ticks: { color: 'rgb(156, 163, 175)' },
-                            grid: { color: 'rgba(75, 85, 99, 0.3)' }
+            const tokensToApprove = Object.entries(TOKENS).filter(([k]) => k !== 'WBNB');
+            const dexCount = Object.keys(DEX_ROUTERS).length;
+            const totalTx = tokensToApprove.length * dexCount;
+            const estimatedGas = totalTx * 0.0003;
+
+            const confirmed = confirm(
+                '⚠️ APPROBATION DES TOKENS ULTRA\n\n' +
+                `Tokens: ${tokensToApprove.length}\n` +
+                `DEX: ${dexCount}\n` +
+                `Total transactions: ${totalTx}\n` +
+                `Gas estimé: ~${estimatedGas.toFixed(4)} BNB\n\n` +
+                'Cela peut prendre 5-10 minutes.\n\n' +
+                'Continuer?'
+            );
+
+            if (!confirmed) return;
+
+            document.getElementById('approveBtn').disabled = true;
+            document.getElementById('approveBtn').textContent = '⏳ Approbation en cours...';
+
+            let approved = 0;
+            let failed = 0;
+            let skipped = 0;
+
+            for (const [tokenKey, token] of tokensToApprove) {
+                for (const [dexKey, dex] of Object.entries(DEX_ROUTERS)) {
+                    const key = `${tokenKey}-${dexKey}`;
+                    if (state.approvals[key]) {
+                        skipped++;
+                        continue;
+                    }
+
+                    try {
+                        console.log(`Approbation ${token.symbol} pour ${dex.name}...`);
+
+                        const tokenContract = new ethers.Contract(token.address, ERC20_ABI, state.signer);
+                        const maxApproval = ethers.constants.MaxUint256;
+
+                        const tx = await tokenContract.approve(dex.router, maxApproval);
+                        console.log(`TX envoyée: ${tx.hash}`);
+
+                        await tx.wait();
+                        console.log(`✅ ${token.symbol} approuvé pour ${dex.name}`);
+
+                        state.approvals[key] = true;
+                        approved++;
+
+                        document.getElementById('approveBtn').textContent = `⏳ ${approved}/${totalTx - skipped} approuvés...`;
+
+                    } catch (error) {
+                        console.error(`❌ Erreur approbation ${key}:`, error.message);
+                        failed++;
+                    }
+                }
+            }
+
+            alert(`✅ Approbations terminées!\n\nRéussis: ${approved}\nDéjà approuvés: ${skipped}\nÉchecs: ${failed}\n\nLe bot ULTRA est maintenant prêt!`);
+
+            document.getElementById('approveBtn').disabled = false;
+            document.getElementById('approveBtn').textContent = '✅ Approuver Tokens';
+
+            await checkApprovals();
+        }
+
+        // Démarrer le scanner ULTRA
+        async function startRealScanner() {
+            if (!state.account) {
+                alert('❌ Connectez votre wallet');
+                return;
+            }
+
+            const allApproved = Object.values(state.approvals).every(a => a);
+            if (!allApproved) {
+                alert('❌ Approuvez d\'abord tous les tokens!');
+                return;
+            }
+
+            const confirmed = confirm(
+                '🚀 DÉMARRAGE DU BOT ULTRA\n\n' +
+                '⚠️ ATTENTION: Ceci exécutera de VRAIES transactions!\n\n' +
+                `✨ 15+ tokens scannés\n` +
+                `✨ 6 DEX analysés\n` +
+                `✨ 100+ paires testées\n` +
+                `Montant: ${document.getElementById('tradeAmount').value} BNB\n` +
+                `Profit min: ${document.getElementById('minProfit').value}%\n\n` +
+                'Êtes-vous SÛR?'
+            );
+
+            if (!confirmed) return;
+
+            state.isScanning = true;
+            state.scanCount = 0;
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            document.getElementById('scanStatus').textContent = '🔴';
+
+            console.log('🚀 SCANNER ULTRA DÉMARRÉ');
+
+            await scanUltraOpportunities();
+
+            const interval = parseInt(document.getElementById('scanInterval').value) * 1000;
+            scanInterval = setInterval(async () => {
+                if (!state.pendingTx) {
+                    await scanUltraOpportunities();
+                }
+            }, interval);
+        }
+
+        // Arrêter le scanner
+        function stopScanner() {
+            state.isScanning = false;
+
+            if (scanInterval) {
+                clearInterval(scanInterval);
+                scanInterval = null;
+            }
+
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('scanStatus').textContent = '⏸️';
+
+            console.log('⏸️ Scanner arrêté');
+        }
+
+        // 🚀 SCANNER ULTRA - Détection massive d'opportunités
+        async function scanUltraOpportunities() {
+            state.scanCount++;
+            console.log(`🔍 Scan Ultra #${state.scanCount}...`);
+
+            const opportunities = [];
+            const arbType = document.getElementById('arbType').value;
+
+            // Scan arbitrage simple
+            if (arbType === 'simple' || arbType === 'both') {
+                const simpleOpps = await scanSimpleArbitrage();
+                opportunities.push(...simpleOpps);
+            }
+
+            // Scan arbitrage triangulaire
+            if (arbType === 'triangular' || arbType === 'both') {
+                const triangularOpps = await scanTriangularArbitrage();
+                opportunities.push(...triangularOpps);
+            }
+
+            opportunities.sort((a, b) => b.netProfitPercent - a.netProfitPercent);
+            state.opportunities = opportunities;
+
+            displayOpportunities(opportunities);
+            document.getElementById('oppCount').textContent = opportunities.length;
+            document.getElementById('oppCountBadge').textContent = opportunities.length;
+
+            console.log(`✅ Scan #${state.scanCount} terminé: ${opportunities.length} opportunités`);
+
+            // Auto-exécution si mode auto
+            const executionMode = document.getElementById('executionMode').value;
+            if (executionMode === 'auto' && opportunities.length > 0 && !state.pendingTx) {
+                const bestOpp = opportunities[0];
+                const minProfit = parseFloat(document.getElementById('minProfit').value);
+                if (bestOpp.netProfitPercent >= minProfit * 2) { // 2x le minimum pour auto
+                    await executeRealArbitrage(bestOpp);
+                }
+            }
+        }
+
+        // Scanner arbitrage simple (A→B→A via 2 DEX)
+        async function scanSimpleArbitrage() {
+            const opportunities = [];
+
+            // Générer toutes les paires possibles
+            const tokenKeys = Object.keys(TOKENS);
+            const pairs = [];
+
+            for (let i = 0; i < tokenKeys.length; i++) {
+                for (let j = i + 1; j < tokenKeys.length; j++) {
+                    // Prioriser les paires avec WBNB, USDT, BUSD
+                    const tokenA = tokenKeys[i];
+                    const tokenB = tokenKeys[j];
+
+                    if (tokenA === 'WBNB' || tokenB === 'WBNB' ||
+                        tokenA === 'USDT' || tokenB === 'USDT' ||
+                        tokenA === 'BUSD' || tokenB === 'BUSD') {
+                        pairs.push([tokenA, tokenB]);
+                    }
+                }
+            }
+
+            console.log(`Scan simple: ${pairs.length} paires`);
+
+            // Scanner les paires par batch pour performance
+            const batchSize = 5;
+            for (let i = 0; i < pairs.length; i += batchSize) {
+                const batch = pairs.slice(i, i + batchSize);
+                const batchResults = await Promise.all(
+                    batch.map(([tokenA, tokenB]) => scanPairSimple(tokenA, tokenB))
+                );
+
+                batchResults.forEach(opps => {
+                    if (opps && opps.length > 0) {
+                        opportunities.push(...opps);
+                    }
+                });
+            }
+
+            return opportunities;
+        }
+
+        // Scanner une paire simple
+        async function scanPairSimple(tokenA, tokenB) {
+            try {
+                const prices = await getPricesFromDEX(tokenA, tokenB);
+
+                if (prices.length < 2) return [];
+
+                const opportunities = [];
+
+                // Comparer tous les DEX entre eux
+                for (let i = 0; i < prices.length; i++) {
+                    for (let j = i + 1; j < prices.length; j++) {
+                        const buyDex = prices[i].price < prices[j].price ? prices[i] : prices[j];
+                        const sellDex = prices[i].price < prices[j].price ? prices[j] : prices[i];
+
+                        const opp = calculateRealArbitrage(tokenA, tokenB, buyDex, sellDex);
+
+                        if (opp.isProfitable) {
+                            opportunities.push(opp);
                         }
                     }
                 }
-            });
 
-            // Performance Chart
-            const ctxPerf = document.getElementById('performanceChart').getContext('2d');
-            performanceChart = new Chart(ctxPerf, {
-                type: 'line',
-                data: {
-                    labels: [],
-                    datasets: [{
-                        label: 'Profit Cumulé',
-                        data: [],
-                        borderColor: 'rgb(34, 197, 94)',
-                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                        fill: true,
-                        tension: 0.4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { labels: { color: 'rgb(229, 231, 235)' } }
+                return opportunities;
+
+            } catch (error) {
+                return [];
+            }
+        }
+
+        // 🔥 Scanner arbitrage triangulaire (A→B→C→A)
+        async function scanTriangularArbitrage() {
+            const opportunities = [];
+
+            // Routes triangulaires populaires
+            const triangularRoutes = [
+                ['WBNB', 'USDT', 'BUSD'],
+                ['WBNB', 'BTCB', 'USDT'],
+                ['WBNB', 'ETH', 'USDT'],
+                ['WBNB', 'CAKE', 'USDT'],
+                ['WBNB', 'BUSD', 'USDC'],
+                ['USDT', 'BTCB', 'BUSD'],
+                ['USDT', 'ETH', 'BUSD'],
+                ['BUSD', 'CAKE', 'WBNB']
+            ];
+
+            console.log(`Scan triangulaire: ${triangularRoutes.length} routes`);
+
+            for (const route of triangularRoutes) {
+                try {
+                    const opp = await calculateTriangularArbitrage(route);
+                    if (opp && opp.isProfitable) {
+                        opportunities.push(opp);
                     }
+                } catch (error) {
+                    // Silent fail pour continuer le scan
+                }
+            }
+
+            return opportunities;
+        }
+
+        // Calculer arbitrage triangulaire
+        async function calculateTriangularArbitrage(route) {
+            const [tokenA, tokenB, tokenC] = route;
+            const tradeAmount = parseFloat(document.getElementById('tradeAmount').value);
+            const minProfit = parseFloat(document.getElementById('minProfit').value);
+
+            try {
+                // Obtenir meilleur prix pour chaque swap
+                const pricesAB = await getPricesFromDEX(tokenA, tokenB);
+                const pricesBC = await getPricesFromDEX(tokenB, tokenC);
+                const pricesCA = await getPricesFromDEX(tokenC, tokenA);
+
+                if (pricesAB.length === 0 || pricesBC.length === 0 || pricesCA.length === 0) {
+                    return null;
+                }
+
+                // Prendre les meilleurs prix
+                const bestAB = pricesAB.reduce((best, curr) => curr.price > best.price ? curr : best);
+                const bestBC = pricesBC.reduce((best, curr) => curr.price > best.price ? curr : best);
+                const bestCA = pricesCA.reduce((best, curr) => curr.price > best.price ? curr : best);
+
+                // Simuler le trade
+                let amount = tradeAmount;
+
+                // A → B
+                const amountB = amount * bestAB.price;
+                const feeAB = amountB * (bestAB.fee / 100);
+                const netB = amountB - feeAB;
+
+                // B → C
+                const amountC = netB * bestBC.price;
+                const feeBC = amountC * (bestBC.fee / 100);
+                const netC = amountC - feeBC;
+
+                // C → A
+                const amountA = netC * bestCA.price;
+                const feeCA = amountA * (bestCA.fee / 100);
+                const finalA = amountA - feeCA;
+
+                const grossProfit = finalA - tradeAmount;
+                const grossProfitPercent = (grossProfit / tradeAmount) * 100;
+
+                // Gas pour 3 swaps
+                const gasCost = estimateGasCost(state.gasPrice, 450000);
+                const netProfit = grossProfit - gasCost;
+                const netProfitPercent = (netProfit / tradeAmount) * 100;
+
+                const isProfitable = netProfitPercent >= minProfit && netProfit > 0;
+
+                return {
+                    type: 'triangular',
+                    route: route.join('→'),
+                    tokenA, tokenB, tokenC,
+                    dex1: bestAB.dexName,
+                    dex2: bestBC.dexName,
+                    dex3: bestCA.dexName,
+                    amount: tradeAmount,
+                    grossProfit,
+                    grossProfitPercent,
+                    gasCost,
+                    netProfit,
+                    netProfitPercent,
+                    isProfitable,
+                    steps: [
+                        { from: tokenA, to: tokenB, amount, result: netB, dex: bestAB.dexName },
+                        { from: tokenB, to: tokenC, amount: netB, result: netC, dex: bestBC.dexName },
+                        { from: tokenC, to: tokenA, amount: netC, result: finalA, dex: bestCA.dexName }
+                    ],
+                    timestamp: Date.now()
+                };
+
+            } catch (error) {
+                return null;
+            }
+        }
+
+        // Obtenir prix des DEX (optimisé avec Promise.allSettled)
+        async function getPricesFromDEX(tokenA, tokenB) {
+            const prices = [];
+            const tradeAmount = parseFloat(document.getElementById('tradeAmount').value);
+            const amountIn = ethers.utils.parseEther(tradeAmount.toString());
+
+            const pricePromises = Object.entries(DEX_ROUTERS).map(async ([dexKey, dex]) => {
+                try {
+                    const router = new ethers.Contract(dex.router, ROUTER_ABI, state.provider);
+                    const path = [TOKENS[tokenA].address, TOKENS[tokenB].address];
+
+                    const amounts = await router.getAmountsOut(amountIn, path);
+                    const amountOut = parseFloat(ethers.utils.formatEther(amounts[1]));
+                    const price = amountOut / tradeAmount;
+
+                    return {
+                        dexKey,
+                        dexName: dex.name,
+                        router: dex.router,
+                        fee: dex.fee,
+                        price,
+                        amountOut
+                    };
+
+                } catch (error) {
+                    return null;
                 }
             });
 
-            // Distribution Chart
-            const ctxDist = document.getElementById('distributionChart').getContext('2d');
-            distributionChart = new Chart(ctxDist, {
-                type: 'bar',
-                data: {
-                    labels: ['Gagnants', 'Perdants'],
-                    datasets: [{
-                        data: [0, 0],
-                        backgroundColor: ['rgb(34, 197, 94)', 'rgb(239, 68, 68)']
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false }
-                    }
+            const results = await Promise.allSettled(pricePromises);
+
+            results.forEach(result => {
+                if (result.status === 'fulfilled' && result.value) {
+                    prices.push(result.value);
                 }
             });
+
+            return prices;
         }
 
-        function updateTokenChart() {
-            if (!tokenChart || state.priceHistory.length === 0) return;
-            
-            const maxPoints<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bot Trading Pro 24/7 - Ultimate Edition</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <style>
-        body {
-            background: linear-gradient(to bottom right, #0f172a, #581c87, #0f172a);
-            min-height: 100vh;
-        }
-        .animate-spin {
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        @keyframes glow {
-            0%, 100% { box-shadow: 0 0 5px rgba(34, 197, 94, 0.5); }
-            50% { box-shadow: 0 0 20px rgba(34, 197, 94, 0.8); }
-        }
-        .pulse {
-            animation: pulse 2s ease-in-out infinite;
-        }
-        .glow {
-            animation: glow 2s ease-in-out infinite;
-        }
-        .keep-awake-indicator {
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            background: rgba(34, 197, 94, 0.9);
-            color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: bold;
-            z-index: 9999;
-            box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
-        }
-    </style>
-</head>
-<body class="text-white p-4 md:p-6">
-    <!-- Keep Awake Indicator -->
-    <div id="keepAwakeIndicator" class="keep-awake-indicator hidden">
-        ⚡ Mode 24/7 ACTIF
-    </div>
+        // Calculer arbitrage réel
+        function calculateRealArbitrage(tokenA, tokenB, buyDex, sellDex) {
+            const tradeAmount = parseFloat(document.getElementById('tradeAmount').value);
+            const minProfit = parseFloat(document.getElementById('minProfit').value);
+            const maxGas = parseFloat(document.getElementById('maxGas').value);
 
-    <div class="max-w-7xl mx-auto">
-        <!-- Header -->
-        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-            <div>
-                <h1 class="text-3xl md:text-4xl font-bold bg-gradient-to-r from-yellow-400 to-orange-500 bg-clip-text text-transparent">
-                    Bot Trading Pro 24/7
-                </h1>
-                <p class="text-gray-400 mt-2">🤖 Auto • 🌊 Cross-DEX Réel • 💎 Multi-Wallet • 📱 Telegram</p>
-            </div>
-            
-            <div class="flex gap-3">
-                <button onclick="openTelegramChannel()" class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-blue-500 to-cyan-500 hover:opacity-90 rounded-lg font-semibold transition-all shadow-lg">
-                    <span>📱</span>
-                    Telegram
-                    <span class="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full pulse">LIVE</span>
-                </button>
-                
-                <button onclick="connectWallet()" id="connectBtn" class="flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-500 hover:to-orange-600">
-                    <span>👛</span>
-                    <span id="walletText">Connecter</span>
-                </button>
-            </div>
-        </div>
+            const spreadPercent = ((sellDex.price - buyDex.price) / buyDex.price) * 100;
 
-        <!-- Multi-Wallet Manager -->
-        <div id="multiWalletSection" class="bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-2 border-purple-500 rounded-xl p-6 mb-6 hidden">
-            <div class="flex justify-between items-center mb-4">
-                <div>
-                    <h3 class="text-2xl font-bold flex items-center gap-2">
-                        <span>💼</span>
-                        Gestion Multi-Wallet
-                    </h3>
-                    <p class="text-sm text-gray-300 mt-1">Diversifiez vos positions sur plusieurs wallets</p>
-                </div>
-                <button onclick="addWallet()" class="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 rounded-lg font-semibold transition-all">
-                    + Ajouter Wallet
-                </button>
-            </div>
+            const tokensBought = tradeAmount * buyDex.price;
+            const tokensAReceived = tokensBought / sellDex.price;
 
-            <div id="walletsList" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <!-- Wallets seront ajoutés ici -->
-            </div>
-        </div>
+            const grossProfit = tokensAReceived - tradeAmount;
+            const grossProfitPercent = (grossProfit / tradeAmount) * 100;
 
-        <!-- Mode 24/7 Configuration -->
-        <div id="autoModeSection" class="bg-gradient-to-r from-red-500/20 to-orange-500/20 border-2 border-red-500 rounded-xl p-6 mb-6 hidden">
-            <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
-                <span>🔐</span>
-                Configuration Trading 24/7 Automatique
-            </h3>
-            
-            <div class="bg-red-900/30 border border-red-500 rounded-lg p-4 mb-4">
-                <p class="text-red-300 font-bold mb-2">⚠️ AVERTISSEMENTS CRITIQUES</p>
-                <ul class="text-sm text-red-200 space-y-1">
-                    <li>• Utilisez UNIQUEMENT un wallet dédié au trading</li>
-                    <li>• Ne mettez que le capital que vous pouvez perdre</li>
-                    <li>• La clé est stockée EN MÉMOIRE uniquement (effacée à la fermeture)</li>
-                    <li>• Système anti-veille activé automatiquement</li>
-                    <li>• Gardez l'onglet ouvert pour le mode 24/7</li>
-                    <li>• Stop-loss automatique pour limiter les pertes</li>
-                </ul>
-            </div>
+            const buyFee = tradeAmount * (buyDex.fee / 100);
+            const sellFee = tokensAReceived * (sellDex.fee / 100);
+            const gasCost = estimateGasCost(state.gasPrice, 300000);
 
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm text-gray-400 mb-2">Clé Privée du Wallet de Trading</label>
-                    <input type="password" id="privateKeyInput" placeholder="0x... (optionnel - laissez vide pour MetaMask manuel)" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-red-400">
-                    <p class="text-xs text-gray-400 mt-1">
-                        <span class="text-yellow-400">⚡</span> Mode auto 24/7 si remplie | Mode manuel MetaMask si vide
-                    </p>
-                </div>
-                
-                <button onclick="togglePrivateKeyVisibility()" class="text-sm text-blue-400 hover:underline">
-                    👁️ Afficher/Masquer la clé
-                </button>
+            const totalFees = buyFee + sellFee + gasCost;
+            const netProfit = grossProfit - totalFees;
+            const netProfitPercent = (netProfit / tradeAmount) * 100;
 
-                <div class="grid grid-cols-2 gap-4">
-                    <button onclick="activateAutoMode()" id="activateAutoBtn" class="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 rounded-lg font-semibold transition-all">
-                        ✅ Activer Mode Auto 24/7
-                    </button>
-                    <button onclick="deactivateAutoMode()" id="deactivateAutoBtn" class="px-6 py-3 bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 rounded-lg font-semibold transition-all hidden">
-                        ⏸️ Désactiver Mode Auto
-                    </button>
-                </div>
-            </div>
-        </div>
+            const isProfitable = netProfitPercent >= minProfit && state.gasPrice <= maxGas && netProfit > 0;
 
-        <!-- Stop-Loss & Take-Profit -->
-        <div id="riskManagementSection" class="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border-2 border-yellow-500 rounded-xl p-6 mb-6 hidden">
-            <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
-                <span>🛡️</span>
-                Gestion des Risques Automatique
-            </h3>
+            return {
+                type: 'simple',
+                pair: `${tokenA}/${tokenB}`,
+                tokenA,
+                tokenB,
+                buyDex: buyDex.dexKey,
+                sellDex: sellDex.dexKey,
+                buyDexName: buyDex.dexName,
+                sellDexName: sellDex.dexName,
+                buyRouter: buyDex.router,
+                sellRouter: sellDex.router,
+                amount: tradeAmount,
+                buyPrice: buyDex.price,
+                sellPrice: sellDex.price,
+                spreadPercent,
+                tokensBought,
+                tokensAReceived,
+                grossProfit,
+                grossProfitPercent,
+                totalFees,
+                netProfit,
+                netProfitPercent,
+                isProfitable,
+                timestamp: Date.now()
+            };
+        }
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <!-- Stop-Loss -->
-                <div class="bg-slate-800/50 rounded-xl p-4 border border-red-500/30">
-                    <div class="flex items-center justify-between mb-3">
-                        <div class="flex items-center gap-2">
-                            <span class="text-red-400 text-2xl">🛑</span>
+        // Estimer coût gas
+        function estimateGasCost(gasGwei, gasUnits) {
+            return (gasGwei * gasUnits) / 1e9;
+        }
+
+        // Afficher opportunités
+        function displayOpportunities(opportunities) {
+            const container = document.getElementById('opportunities');
+
+            if (opportunities.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-16 text-slate-400">
+                        <p class="text-6xl mb-4">🔍</p>
+                        <p class="text-lg">Scan en cours...</p>
+                        <p class="text-sm mt-2">Le scanner ULTRA analyse ${Object.keys(TOKENS).length} tokens sur ${Object.keys(DEX_ROUTERS).length} DEX</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = opportunities.map(opp => {
+                const isHot = opp.netProfitPercent >= 2;
+                const isTriangular = opp.type === 'triangular';
+                const oppJson = JSON.stringify(opp).replace(/"/g, '&quot;');
+
+                return `
+                    <div class="p-5 rounded-2xl ${isHot ? 'neon-border pulse-neon bg-red-500/10' : 'bg-green-500/10 border-2 border-green-500/30'}">
+                        <div class="flex justify-between items-start mb-3">
                             <div>
-                                <p class="font-bold text-red-400">Stop-Loss</p>
-                                <p class="text-xs text-gray-400">Protection contre les pertes</p>
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="text-xl font-bold text-green-400">${isTriangular ? opp.route : opp.pair}</span>
+                                    ${isHot ? '<span class="px-2 py-1 bg-red-500 text-white text-xs rounded-full font-bold animate-pulse">🔥 HOT</span>' : ''}
+                                    ${isTriangular ? '<span class="px-2 py-1 bg-purple-500 text-white text-xs rounded-full font-bold">🔺 TRIANGULAIRE</span>' : ''}
+                                </div>
+                                ${isTriangular ? `
+                                    <p class="text-xs text-slate-400">
+                                        ${opp.dex1} → ${opp.dex2} → ${opp.dex3}
+                                    </p>
+                                ` : `
+                                    <p class="text-xs text-slate-400 mb-1">
+                                        Acheter: ${opp.buyDexName}
+                                    </p>
+                                    <p class="text-xs text-slate-400">
+                                        Vendre: ${opp.sellDexName}
+                                    </p>
+                                `}
+                            </div>
+                            <div class="text-right">
+                                <p class="text-2xl font-bold ${opp.netProfit > 0 ? 'text-green-400' : 'text-red-400'}">
+                                    ${opp.netProfit > 0 ? '+' : ''}${opp.netProfit.toFixed(6)} BNB
+                                </p>
+                                <p class="text-sm ${opp.netProfitPercent > 0 ? 'text-green-300' : 'text-red-300'}">
+                                    ${opp.netProfitPercent > 0 ? '+' : ''}${opp.netProfitPercent.toFixed(4)}%
+                                </p>
                             </div>
                         </div>
-                        <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" id="stopLossToggle" checked class="sr-only peer" onchange="toggleStopLoss()">
-                            <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
-                        </label>
-                    </div>
-                    <div id="stopLossSettings">
-                        <label class="block text-xs text-gray-400 mb-1">Perte Maximum (%)</label>
-                        <input type="number" id="stopLossPercent" value="-3" step="0.5" max="-0.5" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-                        <p class="text-xs text-gray-500 mt-1">Vente auto si perte ≥ ce %</p>
-                    </div>
-                </div>
 
-                <!-- Take-Profit -->
-                <div class="bg-slate-800/50 rounded-xl p-4 border border-green-500/30">
-                    <div class="flex items-center justify-between mb-3">
-                        <div class="flex items-center gap-2">
-                            <span class="text-green-400 text-2xl">💰</span>
+                        ${isTriangular ? `
+                            <div class="bg-slate-900/50 p-2 rounded-lg mb-3 text-xs">
+                                <p class="text-slate-400 mb-1">Route triangulaire:</p>
+                                ${opp.steps.map((step, i) => `
+                                    <p class="text-slate-300">
+                                        ${i + 1}. ${step.from} → ${step.to} sur ${step.dex}: ${step.result.toFixed(4)}
+                                    </p>
+                                `).join('')}
+                                <p class="text-green-400 mt-1 font-bold">Profit: ${opp.grossProfit.toFixed(6)} BNB - Gas: ${opp.gasCost.toFixed(6)} BNB</p>
+                            </div>
+                        ` : `
+                            <div class="grid grid-cols-3 gap-2 text-xs mb-3">
+                                <div class="bg-slate-800/50 p-2 rounded-lg">
+                                    <p class="text-slate-400">Spread</p>
+                                    <p class="font-semibold text-cyan-400">${opp.spreadPercent.toFixed(3)}%</p>
+                                </div>
+                                <div class="bg-slate-800/50 p-2 rounded-lg">
+                                    <p class="text-slate-400">Profit Brut</p>
+                                    <p class="font-semibold text-yellow-400">${opp.grossProfit.toFixed(6)}</p>
+                                </div>
+                                <div class="bg-slate-800/50 p-2 rounded-lg">
+                                    <p class="text-slate-400">Frais</p>
+                                    <p class="font-semibold text-red-400">${opp.totalFees.toFixed(6)}</p>
+                                </div>
+                            </div>
+                        `}
+
+                        ${opp.netProfit > 0 ? `
+                            <button onclick='executeRealArbitrage(${oppJson})' class="w-full px-4 py-3 bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-600 hover:to-orange-700 rounded-xl font-bold transition-all shadow-lg">
+                                🔴 EXÉCUTER TRADE RÉEL
+                            </button>
+                        ` : `
+                            <div class="w-full px-4 py-3 bg-slate-700/50 rounded-xl text-center text-slate-400">
+                                ❌ Non profitable
+                            </div>
+                        `}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Exécuter arbitrage réel
+        async function executeRealArbitrage(opp) {
+            if (state.pendingTx) {
+                alert('⏳ Transaction en cours, patientez...');
+                return;
+            }
+
+            const executionMode = document.getElementById('executionMode').value;
+
+            if (executionMode === 'manual') {
+                const typeStr = opp.type === 'triangular' ? 'TRIANGULAIRE' : 'SIMPLE';
+                const confirmed = confirm(
+                    `🔴 EXÉCUTER TRADE ${typeStr} RÉEL?\n\n` +
+                    `Route: ${opp.type === 'triangular' ? opp.route : opp.pair}\n` +
+                    `Montant: ${opp.amount} BNB\n\n` +
+                    `Profit estimé: +${opp.netProfit.toFixed(4)} BNB (${opp.netProfitPercent.toFixed(2)}%)\n\n` +
+                    `⚠️ TRANSACTION IRRÉVERSIBLE\n\n` +
+                    `Confirmer?`
+                );
+
+                if (!confirmed) return;
+            }
+
+            alert(`⚠️ Fonctionnalité en développement\n\nL'exécution réelle des trades sera disponible dans la prochaine version.\n\nPour l'instant, le bot détecte uniquement les opportunités.`);
+        }
+
+        // Ajouter à l'historique
+        function addToHistory(trade) {
+            state.trades.unshift({
+                ...trade,
+                executedAt: new Date().toLocaleString('fr-FR'),
+                timestamp: Date.now()
+            });
+
+            displayTradeHistory();
+        }
+
+        // Afficher historique
+        function displayTradeHistory() {
+            const container = document.getElementById('tradeHistory');
+
+            if (state.trades.length === 0) {
+                container.innerHTML = '<div class="text-center py-12 text-slate-400">Aucun trade</div>';
+                return;
+            }
+
+            container.innerHTML = state.trades.slice(0, 20).map(trade => {
+                const isSuccess = trade.status === 'success';
+                const isTriangular = trade.type === 'triangular';
+
+                return `
+                    <div class="p-4 bg-slate-700/30 rounded-xl border ${isSuccess ? 'border-green-500/50' : 'border-red-500/50'} hover:border-cyan-500/50 transition-all">
+                        <div class="flex justify-between items-center">
                             <div>
-                                <p class="font-bold text-green-400">Take-Profit</p>
-                                <p class="text-xs text-gray-400">Sécurisation des gains</p>
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="font-bold ${isSuccess ? 'text-green-400' : 'text-red-400'}">${isTriangular ? trade.route : trade.pair}</span>
+                                    <span class="px-2 py-1 ${isSuccess ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'} text-xs rounded-full">
+                                        ${isSuccess ? '✅ Réussi' : '❌ Échoué'}
+                                    </span>
+                                    ${isTriangular ? '<span class="px-2 py-1 bg-purple-500/20 text-purple-300 text-xs rounded-full">🔺</span>' : ''}
+                                </div>
+                                <p class="text-xs text-slate-400">${trade.executedAt}</p>
+                            </div>
+                            <div class="text-right">
+                                ${isSuccess ? `
+                                    <p class="text-xl font-bold text-green-400">+${(trade.realProfit || trade.netProfit).toFixed(4)}</p>
+                                    <p class="text-sm text-green-300">+${trade.netProfitPercent.toFixed(2)}%</p>
+                                ` : `
+                                    <p class="text-xl font-bold text-red-400">-${trade.totalFees?.toFixed(4) || '0.000'}</p>
+                                `}
                             </div>
                         </div>
-                        <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" id="takeProfitToggle" checked class="sr-only peer" onchange="toggleTakeProfit()">
-                            <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
-                        </label>
                     </div>
-                    <div id="takeProfitSettings">
-                        <label class="block text-xs text-gray-400 mb-1">Profit Cible (%)</label>
-                        <input type="number" id="takeProfitPercent" value="5" step="0.5" min="1" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-400">
-                        <p class="text-xs text-gray-500 mt-1">Vente auto si profit ≥ ce %</p>
-                    </div>
-                </div>
-            </div>
+                `;
+            }).join('');
+        }
 
-            <div class="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                <p class="text-xs text-blue-200">
-                    💡 <strong>Conseil :</strong> Stop-Loss à -3% et Take-Profit à +5% = ratio risque/rendement 1:1.67
-                </p>
-            </div>
-        </div>
-
-        <!-- Telegram Notifications -->
-        <div id="telegramSection" class="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border-2 border-blue-500 rounded-xl p-6 mb-6 hidden">
-            <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
-                <span>📱</span>
-                Notifications Telegram
-            </h3>
-
-            <div class="bg-blue-900/30 border border-blue-500 rounded-lg p-4 mb-4">
-                <p class="text-blue-300 font-bold mb-2">🤖 Configuration Bot Telegram</p>
-                <ol class="text-sm text-blue-200 space-y-1">
-                    <li>1. Créez un bot via @BotFather sur Telegram</li>
-                    <li>2. Copiez le token du bot</li>
-                    <li>3. Démarrez une conversation avec votre bot</li>
-                    <li>4. Récupérez votre Chat ID via @userinfobot</li>
-                </ol>
-            </div>
-
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm text-gray-400 mb-2">Bot Token</label>
-                    <input type="password" id="telegramBotToken" placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-400">
-                </div>
-
-                <div>
-                    <label class="block text-sm text-gray-400 mb-2">Chat ID</label>
-                    <input type="text" id="telegramChatId" placeholder="123456789" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-400">
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                    <button onclick="testTelegramNotification()" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-all">
-                        🧪 Tester Notification
-                    </button>
-                    <button onclick="saveTelegramConfig()" class="px-6 py-3 bg-green-600 hover:bg-green-700 rounded-lg font-semibold transition-all">
-                        💾 Sauvegarder Config
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Arbitrage Panel -->
-        <div id="arbitragePanel" class="bg-gradient-to-r from-green-500/20 to-emerald-500/20 border-2 border-green-500 rounded-xl p-6 mb-6 hidden">
-            <div class="flex justify-between items-center mb-4">
-                <div>
-                    <h3 class="text-2xl font-bold flex items-center gap-2">
-                        <span>💎</span>
-                        Arbitrage Cross-DEX RÉEL
-                    </h3>
-                    <p class="text-sm text-gray-300 mt-1">PCS • BSW • ApeSwap • BabySwap • MDEX • BakerySwap</p>
-                </div>
-                <button onclick="toggleArbitrage()" id="arbitrageToggle" class="flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all bg-green-600 hover:bg-green-700">
-                    <span id="arbIcon">▶️</span>
-                    <span id="arbText">Démarrer</span>
-                </button>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4">
-                    <label class="block text-sm text-gray-400 mb-2">Profit Minimum (%)</label>
-                    <input type="number" id="minArbitrageProfit" value="0.5" step="0.1" min="0.1" max="10" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-green-400">
-                    <p class="text-xs text-gray-400 mt-1">Profit net minimum après frais</p>
-                </div>
-
-                <div class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4">
-                    <label class="block text-sm text-gray-400 mb-2">Montant par Arbitrage (USDT)</label>
-                    <input type="number" id="arbitrageAmount" value="50" step="10" min="10" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-green-400">
-                    <p class="text-xs text-gray-400 mt-1">Montant USDT par exécution</p>
-                </div>
-
-                <div class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4">
-                    <label class="block text-sm text-gray-400 mb-2">Fréquence Scan (sec)</label>
-                    <input type="number" id="arbitrageScanInterval" value="15" step="5" min="10" max="60" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-green-400">
-                    <p class="text-xs text-gray-400 mt-1">Intervalle entre chaque scan</p>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                <div class="bg-slate-800/50 backdrop-blur-sm border border-green-600 rounded-xl p-4">
-                    <p class="text-gray-400 text-xs">Opportunités Détectées</p>
-                    <p class="text-2xl font-bold mt-1 text-green-400"><span id="arbOpportunities">0</span></p>
-                </div>
-                
-                <div class="bg-slate-800/50 backdrop-blur-sm border border-blue-600 rounded-xl p-4">
-                    <p class="text-gray-400 text-xs">Arbitrages Exécutés</p>
-                    <p class="text-2xl font-bold mt-1 text-blue-400"><span id="arbExecuted">0</span></p>
-                </div>
-                
-                <div class="bg-slate-800/50 backdrop-blur-sm border border-yellow-600 rounded-xl p-4">
-                    <p class="text-gray-400 text-xs">Profit Total Arbitrage</p>
-                    <p class="text-2xl font-bold mt-1 text-yellow-400">$<span id="arbProfit">0.00</span></p>
-                </div>
-
-                <div class="bg-slate-800/50 backdrop-blur-sm border border-purple-600 rounded-xl p-4">
-                    <p class="text-gray-400 text-xs">Meilleur Profit</p>
-                    <p class="text-2xl font-bold mt-1 text-purple-400"><span id="arbBestProfit">0.00</span>%</p>
-                </div>
-            </div>
-
-            <div id="arbitrageOpportunities" class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4">
-                <h4 class="text-lg font-bold mb-3 flex items-center gap-2">
-                    <span>🎯</span>
-                    Opportunités en Temps Réel
-                </h4>
-                <div id="arbOpportunitiesList">
-                    <div class="text-center py-8 text-gray-400">
-                        <span class="text-4xl">🔍</span>
-                        <p>Cliquez sur "Démarrer" pour scanner...</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                <p class="text-xs text-blue-200">
-                    💡 <strong>Mode Auto 24/7 :</strong> Si activé, les opportunités seront exécutées automatiquement dès détection !
-                </p>
-            </div>
-        </div>
-
-        <!-- Dashboard Statistiques Avancées -->
-        <div id="statsSection" class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6 mb-6 hidden">
-            <h3 class="text-2xl font-bold mb-4 flex items-center gap-2">
-                <span>📊</span>
-                Dashboard Trading
-            </h3>
-
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div class="bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500 rounded-xl p-4">
-                    <p class="text-gray-400 text-xs">Profit Total</p>
-                    <p class="text-2xl font-bold mt-1 text-green-400">$<span id="totalProfit">0.00</span></p>
-                    <p class="text-xs text-green-300 mt-1">+<span id="totalProfitPercent">0.00</span>%</p>
-                </div>
-
-                <div class="bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500 rounded-xl p-4">
-                    <p class="text-gray-400 text-xs">Trades Gagnants</p>
-                    <p class="text-2xl font-bold mt-1 text-blue-400"><span id="winningTrades">0</span></p>
-                    <p class="text-xs text-blue-300 mt-1">Win Rate: <span id="winRate">0</span>%</p>
-                </div>
-
-                <div class="bg-gradient-to-br from-red-500/20 to-pink-500/20 border border-red-500 rounded-xl p-4">
-                    <p class="text-gray-400 text-xs">Trades Perdants</p>
-                    <p class="text-2xl font-bold mt-1 text-red-400"><span id="losingTrades">0</span></p>
-                    <p class="text-xs text-red-300 mt-1">Perte Moy: <span id="avgLoss">0</span>%</p>
-                </div>
-
-                <div class="bg-gradient-to-br from-yellow-500/20 to-orange-500/20 border border-yellow-500 rounded-xl p-4">
-                    <p class="text-gray-400 text-xs">Ratio R/R</p>
-                    <p class="text-2xl font-bold mt-1 text-yellow-400"><span id="riskRewardRatio">0</span></p>
-                    <p class="text-xs text-yellow-300 mt-1">Sharpe: <span id="sharpeRatio">0</span></p>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- Performance Chart -->
-                <div class="bg-slate-700/50 rounded-xl p-4">
-                    <h4 class="font-bold mb-3">📈 Performance Cumulée</h4>
-                    <div class="h-64">
-                        <canvas id="performanceChart"></canvas>
-                    </div>
-                </div>
-
-                <!-- Distribution des Profits -->
-                <div class="bg-slate-700/50 rounded-xl p-4">
-                    <h4 class="font-bold mb-3">📊 Distribution Profits/Pertes</h4>
-                    <div class="h-64">
-                        <canvas id="distributionChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Graphique du Token Tradé -->
-        <div id="tokenChartSection" class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6 mb-6 hidden">
-            <div class="flex justify-between items-center mb-4">
-                <div>
-                    <h3 class="text-2xl font-bold flex items-center gap-2">
-                        <span>📈</span>
-                        Graphique <span id="currentTokenName" class="text-yellow-400">BTC</span>/USDT
-                    </h3>
-                    <p class="text-sm text-gray-400 mt-1">Prix en temps réel avec indicateurs techniques</p>
-                </div>
-                <div class="flex gap-2">
-                    <button onclick="changeTimeframe('1m')" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm">1m</button>
-                    <button onclick="changeTimeframe('5m')" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm">5m</button>
-                    <button onclick="changeTimeframe('15m')" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm">15m</button>
-                    <button onclick="changeTimeframe('1h')" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm">1h</button>
-                </div>
-            </div>
-
-            <div class="h-96 mb-4">
-                <canvas id="tokenChart"></canvas>
-            </div>
-
-            <div class="grid grid-cols-4 gap-3">
-                <div class="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                    <p class="text-xs text-gray-400">Prix Actuel</p>
-                    <p class="text-lg font-bold text-blue-400">$<span id="liveTokenPrice">0</span></p>
-                </div>
-                <div class="p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
-                    <p class="text-xs text-gray-400">RSI (14)</p>
-                    <p class="text-lg font-bold text-purple-400"><span id="liveRSI">50</span></p>
-                </div>
-                <div class="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                    <p class="text-xs text-gray-400">EMA 20</p>
-                    <p class="text-lg font-bold text-yellow-400">$<span id="liveEMA20">0</span></p>
-                </div>
-                <div class="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                    <p class="text-xs text-gray-400">Volume 24h</p>
-                    <p class="text-lg font-bold text-red-400">$<span id="liveVolume">0</span>M</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Trading Controls -->
-        <div id="tradingSection" class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6 mb-6 hidden">
-            <h3 class="text-2xl font-bold mb-4">🤖 Contrôles de Trading</h3>
-            
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-gray-400 mb-2">Token à trader</label>
-                    <select id="cryptoSelect" onchange="changeCrypto()" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-yellow-400">
-                        <option value="BTC">Bitcoin (BTC)</option>
-                        <option value="ETH">Ethereum (ETH)</option>
-                        <option value="BNB">BNB</option>
-                    </select>
-                </div>
-
-                <div>
-                    <label class="block text-sm text-gray-400 mb-2">Capital de trading</label>
-                    <input type="number" id="capitalInput" placeholder="Ex: 100" step="10" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-yellow-400">
+        console.log('🚀 BOT ARBITRAGE ULTRA CHARGÉ');
+        console.log(`✨ ${Object.keys(TOKENS).length} TOKENS • ${Object.keys(DEX_ROUTERS).length} DEX • MODE ULTRA`);
+    </script>
+</body>
+</html>
